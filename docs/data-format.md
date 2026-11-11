@@ -1,7 +1,7 @@
 # Data format (schema 1.2.0)
 
 Schema changes:
-- **1.2.0:** Phase 2 instrument files `interaction_events.jsonl`, `instrument_inputs.jsonl`, `interaction_timing.jsonl` and the `session.json` section `instrument` (see [instrument.md](instrument.md)). Additive; written only when the instrument runs.
+- **1.2.0:** Phase 2 files `interaction_events.jsonl`, `instrument_inputs.jsonl`, `interaction_timing.jsonl` ([instrument.md](instrument.md)), `music_events.jsonl`, `music_timing.jsonl` ([music.md](music.md)), the `session.json` sections `instrument`, `music`, `music_output`, `music_failed`, and the event `consumer_error`. Additive; written only when the instrument runs.
 - **1.1.0:** `calibration_neutral.jsonl` records gain `q0_tilt_from_upright_deg`. Additive; older readers ignore it.
 - **1.0.0:** initial schema.
 

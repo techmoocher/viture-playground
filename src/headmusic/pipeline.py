@@ -131,8 +131,7 @@ class Pipeline:
         if ps.valid:
             self._last_rx = ps.host_rx_monotonic_ns
         self._records(records)
-        for c in self.consumers:
-            c.on_sample(ps)
+        self._notify("on_sample", ps)
         with self._lock:
             st = self.stats
             st["pose_samples"] += 1
@@ -147,8 +146,7 @@ class Pipeline:
         for r in records:
             if self.writer:
                 self.writer.write_calibration(r)
-            for c in self.consumers:
-                c.on_calibration(r)
+            self._notify("on_calibration", r)
             with self._lock:
                 self.stats["neutral_attempts"] += 1
                 self.stats["neutral_accepted"] += 1 if r.get("accepted") else 0
@@ -159,16 +157,14 @@ class Pipeline:
             c.after_seq = self._last_seq
         if self.writer:
             self.writer.write_command(c)
-        for consumer in self.consumers:
-            consumer.on_command(c)
+        self._notify("on_command", c)
         self._records(self.processor.handle_command(c))
 
     def _on_event(self, e: Event) -> None:
         if self.writer:
             self.writer.write_event(e, self._last_seq)
         self.gate.on_event(e)
-        for c in self.consumers:
-            c.on_event(e)
+        self._notify("on_event", e)
         with self._lock:
             if e.kind != "sdk_log":
                 self.stats["last_event"] = (e.kind, e.data)
@@ -204,11 +200,36 @@ class Pipeline:
         self.stream_info = info
         return info
 
+    def _notify(self, method: str, arg) -> None:
+        """Call one consumer method on every consumer. If a consumer raises, all consumers get
+        on_failure(exc) (best effort: the chord engine silences its output), are detached, and a
+        consumer_error event is logged. Acquisition, processing and recording carry on."""
+        for c in list(self.consumers):
+            try:
+                getattr(c, method)(arg)
+            except Exception as exc:  # noqa: BLE001 - any consumer failure must stop musical output
+                self._consumer_failure(c, method, exc)
+                return
+
+    def _consumer_failure(self, culprit, method: str, exc: BaseException) -> None:
+        failed, self.consumers = self.consumers, []
+        for c in failed:
+            try:
+                c.on_failure(exc)
+            except Exception:  # noqa: BLE001
+                pass
+        e = Event("consumer_error", self.clock(), {"consumer": type(culprit).__name__, "method": method,
+                                                    "error": repr(exc)})
+        if self.writer:
+            self.writer.write_event(e, self._last_seq)
+        with self._lock:
+            self.stats["last_event"] = (e.kind, e.data)
+            self.stats["consumer_error"] = e.data
+
     def _check_stale(self) -> None:
         if self.consumers:
             now = self.clock()
-            for c in self.consumers:
-                c.on_tick(now)
+            self._notify("on_tick", now)
         if self._last_rx is None:
             return
         now = self.clock()

@@ -1,7 +1,7 @@
 # Phase 2 — Playable Four-Chord Instrument: Engineering Proposal
 
 **Revision:** 2 (2026-11-11). It incorporates your Phase 2 brief (§0). Revision 1 is in this file's git history.
-**Status:** approved direction. **2A implemented** (gesture FSM, logs, replay; see [instrument.md](instrument.md)); 2B–2D follow in order (§7).
+**Status:** approved direction. **2A implemented** ([instrument.md](instrument.md)); **2B implemented** ([music.md](music.md)); 2C–2D follow (§7).
 **Scope:** a playable, real-time, head-controlled instrument with four chords (C, G, Am, F) on the Phase 1 pipeline. No comfort models, no participant calibration, no formal experiments and no ML (§8).
 
 **Every angle, time and radius in this document and in `defaults.toml` is a provisional engineering default.** Each one is configurable and recorded in `session.json`. None is an ergonomic, comfort or safety claim, and none is validated. The fixture results from G0 describe the device on a table, **not** worn use or usability.
@@ -212,7 +212,7 @@ Releasing is always allowed: it stops sound and selects nothing. Release versus 
 
 | File | Content |
 |---|---|
-| `interaction_events.jsonl` | **Deterministic** FSM and engine decisions: `event_id`, `event_type`, `seq`, `connection_id`, `neutral_calibration_id`, `device_ts_raw`, `host_rx_monotonic_ns`, `produced_host_ns`, `state`, `chord`, `region`, `reason`, `dwell_elapsed_ms`, `mapping_version` |
+| `interaction_events.jsonl` | **Deterministic** FSM decisions (the engine's are in `music_events.jsonl`, [music.md](music.md)): `event_id`, `event_type`, `seq`, `connection_id`, `neutral_calibration_id`, `device_ts_raw`, `host_rx_monotonic_ns`, `produced_host_ns`, `state`, `chord`, `region`, `reason`, `dwell_elapsed_ms`, `mapping_version` |
 | `instrument_inputs.jsonl` | Live-only inputs (§2) with their positions |
 | `interaction_timing.jsonl` | **Non-deterministic:** processing time of each decision, MIDI send times before and after each call, backend errors. Joined by `event_id` and never compared on replay |
 | `session.json` | `instrument` (and in 2B `music`) section: the full parameter snapshot, regions, `mapping_version` (a hash), backend and port |

@@ -97,6 +97,12 @@ class InstrumentConsumer:
                          "reasons": list(gs.reasons)})
         self._emit(self.fsm.interrupt("stale_tick", now))
 
+    def on_failure(self, exc: BaseException) -> None:
+        """A consumer failed (pipeline guard): nothing may be selected any more."""
+        self.fsm.enabled = False
+        if self.log:
+            self.log.flush()
+
     def finish(self) -> None:
         """End of stream: apply any remaining logged inputs (replay), then stop the instrument."""
         if self.replay:

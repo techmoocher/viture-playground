@@ -100,6 +100,10 @@ Each reset raises a freshness watermark. Samples produced (by the gate's estimat
 
 `capture_neutral` (existing), `instrument_enable`, `instrument_disable` and `panic`. All of them go through `commands.jsonl` and are replayed.
 
-## Not yet (2B–2D)
+## Sound
 
-Sound and the chord engine, `allow_same_chord_recommit`, accompaniment, the HUD, `headmusic play`, and hardware runs.
+The chord engine is in [music.md](music.md) (2B).
+
+## Not yet (2C–2D)
+
+The HUD, `headmusic play` (live), and hardware runs.
