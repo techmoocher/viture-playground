@@ -53,7 +53,9 @@ Commands are `.venv\Scripts\python -m headmusic …`. Every run writes a session
 | R1 | 1 | `info` | ~5 s, no streaming | Connected; any placement | None |
 | R2 | 3, and 2 at 240 Hz | `check-placement`, then `record --freq 240 --duration 600 --mounting fixture --stationary --capture-neutral-at 2` | 15 s + 10 min | Upright on the table (or stand), room quiet | Set up, then leave the table untouched |
 | R3–R5 | 2 at 60, 90, 120 Hz | `record --freq F --duration 300 --mounting fixture --stationary --capture-neutral-at 2` | 3 × 5 min | Same | Untouched |
-| R6 | 4–8 | `view --record --mounting fixture` | ~15 min | Stand and wedge on the table | Follow the segment script below |
+| R6a | 4–6 | `view --record --mounting fixture --script r6a` | ~5 min | Flat table with tape lines A and B, wedge | Guided script: Space for each action |
+| R6b | 7 | `view --record --mounting fixture --script r6b` | ~5 min | Wedge on the flat table | Guided script |
+| R6c | 8 | `view --record --mounting fixture --script r6c` | ~2 min | Flat table | Guided script |
 | R7 | 9 | `view --record --mounting fixture --segment unplug` | ~2 min | Stand | Unplug the USB cable for ~5 s, replug |
 | R8 | 9b | `view --record --mounting fixture --segment pickup` | ~2 min | Stand | Lift the glasses off the stand, hold ~5 s, put back (not worn) |
 | R9 | 10 | `view --record --mounting fixture --segment sleep` | ~3 min | Stand | Put the PC to sleep ~30 s, wake it |
@@ -71,11 +73,11 @@ starts with the 15-second placement check.
 | 1 | Identity | Glasses connected | `headmusic info` | PID, model "Pro", Gen1, firmware, SDK 2.4.2 written in the report |
 | 2 | Rate per frequency | Glasses resting still on a rigid fixture, not worn | `headmusic record --freq F --duration 300 --mounting fixture --stationary --capture-neutral-at 2` for F = 60, 90, 120 (240 from step 3) | Requested / selected / achieved table; candidate `r_ref` per frequency (see below) |
 | 3 | Stationary ≥ 60 s and 10 min | Same fixture, untouched, room quiet | `record --freq 240 --duration 600 --mounting fixture --stationary --capture-neutral-at 2` | Angular jitter, apparent drift (per axis and geodesic), arrival jitter, per-minute stability |
-| 4 | Axis and sign: yaw | Stand turned by hand on the table against the 90° reference | Segments `yaw_left_90`, `yaw_right_90` (R6) | Segment report: `P_head` yaw ≈ +90 for a left (counter-clockwise from above) turn, ≈ −90 for a right turn; axis near vertical |
-| 5 | Axis and sign: pitch | Glasses tilted nose-down onto the wedge | Segment `pitch_down` (R6) | `P_head` pitch > 0; axis near the head-frame +Y (≈ 90° from vertical) |
-| 6 | Axis and sign: roll | Glasses tilted right lens down onto the wedge | Segment `roll_right_down` (R6) | `P_head` roll > 0; axis near the head-frame +X |
-| 7 | Quaternion direction (U1) | Glasses fixed on the wedge (pitched), the whole wedge turned ~90° on the table | Segments `u1_pitched_about_vertical`, `u1_rolled_about_vertical` (R6) | See "Reading the U1 result" below |
-| 8 | Recenter behaviour | Fixture | In the viewer: capture neutral, rotate, capture again (R6) | Raw stream has no jump at the recenter; `neutral_calibration_id` increments; rejected attempts carry reasons |
+| 4 | Axis and sign: yaw | Stand turned by hand on the table against the 90° reference | Segments `yaw_left_90`, `yaw_right_90` (R6a) | Segment report: `P_head` yaw ≈ +90 for a left (counter-clockwise from above) turn, ≈ −90 for a right turn; axis near vertical |
+| 5 | Axis and sign: pitch | Glasses tilted nose-down onto the wedge | Segment `pitch_down` (R6a) | `P_head` pitch > 0; axis near the head-frame +Y (≈ 90° from vertical) |
+| 6 | Axis and sign: roll | Glasses tilted right lens down onto the wedge | Segment `roll_right_down` (R6a) | `P_head` roll > 0; axis near the head-frame +X |
+| 7 | Quaternion direction (U1) | Glasses fixed on the wedge (pitched), the whole wedge turned ~90° on the table | Segments `u1_pitched_about_vertical`, `u1_rolled_about_vertical` (R6b) | See "Reading the U1 result" below |
+| 8 | Recenter behaviour | Fixture | In the viewer: capture neutral, rotate, capture again (R6c) | Raw stream has no jump at the recenter; `neutral_calibration_id` increments; rejected attempts carry reasons |
 | 9 | Unplug / replug | Fixture | `view --record`, unplug the USB cable for about 5 s, replug | `device_disconnected` then `device_connected` with a new `connection_id`; gate not usable until a new neutral; no samples valid during the outage |
 | 9b | Pick-up pause | Fixture, then the operator lifts the glasses off the stand and puts them back, without wearing them | `view --record --segment pickup` | Is the 297 ms device-side pause seen at pickup reproducible? Is it cable movement or something on the device? Is it flagged as a gap, with the gate not usable? |
 | 10 | Sleep / wake | Fixture | `view --record`, put the PC to sleep for about 30 s | Behaviour documented (reconnect or error); no stale data used |
@@ -83,24 +85,37 @@ starts with the 15-second placement check.
 | 12 | Headless vs viewer timing | Fixture | Step 3 headless, then `view --record --close-after 600` of the same length | Arrival-time jitter and loss compared (U7) |
 | 13 | Raw mode (optional) | Fixture | `record --mode raw --freq 500 --duration 120 --mounting fixture` | Achieved raw rate; channel statistics (units undocumented) |
 
-## Segment script for R6 (steps 4–8)
+## Guided scripts for R6a–R6c (steps 4–8)
 
 The segment report (`headmusic analyze`, section "Segments") compares the mean orientation of the **first** and **last**
-second of each segment (`metrics.segment_window_s`). So in every segment: **hold still ≥ 2 s, move, hold still ≥ 2 s.**
+second of each segment (`metrics.segment_window_s`). So every segment has to be: **hold still ≥ 2 s, move, hold still ≥ 2 s.**
 The report shows the dispersion of both windows, so a window that was not still is visible.
 
-In the viewer: type the label, press **Start segment**, do the movement, press **End segment**.
+**Guided mode** (`view --record --script r6a|r6b|r6c`; `headmusic/viewer/guided.py`). It replaces typing labels and
+clicking Start/End segment. Both R6a attempts on 2026-11-11 failed with the manual controls: in the first, the controls were
+off-screen; in the second, no segment was marked and 9 neutral captures were triggered.
+- A large panel at the top shows one instruction at a time. The operator only presses **Space**.
+- **Segment step:**
+  1. Space starts the segment; the panel counts down 2 s of "hold still, hands off".
+  2. The panel says "NOW: …"; the operator does the movement, lets go, and presses Space.
+  3. Another 2 s countdown runs, then the segment closes.
 
-1. Glasses upright on the stand, aligned with the first tape line. Press **N** and wait until the capture is accepted.
-2. `yaw_left_90`: turn the stand 90° counter-clockwise (seen from above) to the second line, keeping it flat on the table.
-3. `yaw_right_90`: turn it back 90° clockwise.
-4. `pitch_down`: from upright, tilt the glasses nose-down onto the wedge.
-5. `roll_right_down`: from upright, tilt the glasses right lens down onto the wedge.
-6. `u1_pitched_about_vertical`: glasses resting nose-down on the wedge. Turn the **whole wedge** ~90° counter-clockwise on the
-   table, keeping the wedge flat on the table and the glasses fixed on it.
-7. `u1_rolled_about_vertical`: the same with the glasses resting right lens down on the wedge.
-8. Optional `u1_own_up_axis`: glasses flat on a turntable that is itself tilted on the wedge; turn the turntable ~90°.
-9. Step 8 (recenter): glasses upright on the stand. Press **N**, turn the stand ~45°, press **N** again.
+  Both holds are inside the segment, where the report takes its windows.
+- **Neutral step:** Space requests the capture. The panel advances when it is accepted and offers a retry when it is rejected.
+- **Labels are automatic.** The manual controls and the N shortcut are off.
+- **Recording:** the script name and steps are written to `commands.jsonl` (`script_start`), and closing the window closes
+  any open segment.
+- **Tested without hardware:** a simulated operator walks the whole R6a script through the real processing and the
+  segment report (`tests/test_guided.py`).
+
+| Script | Steps (labels) |
+|---|---|
+| `r6a` | `neutral` on line A, then `yaw_left_90` (A → B), `yaw_right_90` (B → A), `pitch_down` (onto the wedge nose-down), `roll_right_down` (onto the wedge, wearer's right side lower) |
+| `r6b` | `u1_pitched_about_vertical` (glasses nose-down on the wedge; turn the **whole wedge** ~90° left on the table), `u1_rolled_about_vertical` (same, wearer's right side lower) |
+| `r6c` | `neutral_1`, `recenter_turn_45` (turn ~45° left), `neutral_2` |
+
+Optional, not scripted: `u1_own_up_axis`, with the glasses flat on a turntable that is itself tilted on the wedge,
+turning the turntable ~90°.
 
 ## Reading the U1 result
 

@@ -140,6 +140,9 @@ def cmd_check_placement(args) -> int:
 
 # --------------------------------------------------------------------------- live record / view
 def _live(args, view: bool) -> int:
+    if view and getattr(args, "script", None) and not args.record:
+        print("--script needs --record (a guided bench run is always recorded)", file=sys.stderr)
+        return 2
     from headmusic.acquisition.capture_shim import CaptureShim
     from headmusic.acquisition.viture_source import VitureSdkSource
     cfg = _cfg(args)
@@ -181,7 +184,12 @@ def _live(args, view: bool) -> int:
     try:
         if view:
             from headmusic.viewer.app import ViewerApp
-            app = ViewerApp(pipe, "headmusic — VITURE head orientation (Phase 1)", on_close=stop.set)
+            script = None
+            if args.script:
+                from headmusic.viewer.guided import make_script
+                script = make_script(args.script)
+                pipe.submit_command("script_start", name=args.script, steps=[st.label for st in script.steps])
+            app = ViewerApp(pipe, "headmusic — VITURE head orientation (Phase 1)", on_close=stop.set, script=script)
             if args.close_after:
                 app.root.after(int(args.close_after * 1000), app._close)
             app.run()
@@ -365,6 +373,8 @@ def build_parser() -> argparse.ArgumentParser:
     live_args(p)
     p.add_argument("--record", action="store_true", help="also record the session")
     p.add_argument("--close-after", type=float, help="close the viewer after S seconds (unattended checks)")
+    p.add_argument("--script", choices=["r6a", "r6b", "r6c"],
+                   help="guided bench script (docs/bench-checklist.md): Space for every action, labels automatic")
 
     p = sub.add_parser("replay", help="replay a recorded session without glasses")
     p.add_argument("session")

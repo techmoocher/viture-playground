@@ -5,8 +5,9 @@ same angles of the absolute tracking-frame quaternion, labelled as such.
 """
 from __future__ import annotations
 
+import time
 import tkinter as tk
-from typing import Callable
+from typing import Callable, Optional
 
 from headmusic.orientation.euler import direction_words, zyx_from_quat
 from headmusic.orientation.quaternion import up_axis_tilt_deg
@@ -43,8 +44,10 @@ def command_feedback(segment_label, last_command) -> str:
 
 class ViewerApp:
     def __init__(self, pipeline, title: str, on_close: Callable[[], None], window_s: float = 10.0,
-                 refresh_ms: int = 33) -> None:
+                 refresh_ms: int = 33, script=None, clock: Optional[Callable[[], float]] = None) -> None:
         self.p = pipeline
+        self.script = script  # GuidedScript or None (manual controls)
+        self.clock = clock or time.monotonic
         self.on_close = on_close
         self.window_s = window_s
         self.refresh_ms = refresh_ms
@@ -56,7 +59,12 @@ class ViewerApp:
         # Controls first, at the top: widgets packed last are the first to be cut off when the window is
         # taller than the visible screen area.
         bar = tk.Frame(self.root, bg=BG)
-        bar.pack(fill="x", padx=12, pady=(10, 4))
+        if script is None:
+            bar.pack(fill="x", padx=12, pady=(10, 4))
+        else:  # guided mode: one large instruction panel; the manual controls and the N shortcut are off
+            self.guide = tk.Label(self.root, text="", bg="#1b2733", fg=TEXT, font=("Segoe UI", 14, "bold"),
+                                  anchor="w", justify="left", padx=12, pady=10, wraplength=900)
+            self.guide.pack(fill="x", padx=12, pady=(10, 4))
         top = tk.Frame(self.root, bg=BG)
         top.pack(fill="x", padx=12, pady=(4, 4))
         self.status = tk.Label(top, text="starting…", bg=BG, fg=TEXT, font=("Segoe UI", 11), anchor="w", justify="left")
@@ -78,7 +86,10 @@ class ViewerApp:
         self.feedback = tk.Label(self.root, text=command_feedback(None, None), bg=BG, fg="#fbbc04",
                                  font=("Segoe UI", 11, "bold"), anchor="w")
         self.feedback.pack(fill="x", padx=12, before=top)
-        self.root.bind("<Key-n>", lambda e: self.capture() if e.widget is not self.seg_label else None)
+        if script is None:
+            self.root.bind("<Key-n>", lambda e: self.capture() if e.widget is not self.seg_label else None)
+        else:
+            self.root.bind("<space>", lambda e: self.guided_press())
         self.segment_open = False
         self.open_label = None
 
@@ -106,7 +117,29 @@ class ViewerApp:
             self.segment_open, self.open_label = False, None
             self._feedback(f"ended '{label}'")
 
+    def guided_press(self) -> None:
+        self._submit_guided(self.script.press(self.clock()))
+
+    def _submit_guided(self, commands) -> None:
+        for kind, data in commands:
+            if kind == "capture_neutral":
+                self.capture()
+            elif kind == "segment_start":
+                self.p.submit_command("segment_start", **data)
+                self.segment_open, self.open_label = True, data["label"]
+                self._feedback(f"started '{data['label']}'")
+            elif kind == "segment_end":
+                self.seg_end()
+
+    def _guided_refresh(self, last_neutral) -> None:
+        now = self.clock()
+        self.script.observe_neutral(last_neutral)
+        self._submit_guided(self.script.tick(now))
+        self.guide.config(text=self.script.text(now))
+
     def _close(self) -> None:
+        if self.script is not None and self.segment_open:
+            self.seg_end()  # never leave a guided segment open in the recording
         self.on_close()
         self.root.destroy()
 
@@ -146,6 +179,8 @@ class ViewerApp:
                 extra += f"  tilt at capture {ln['q0_tilt_from_upright_deg']:.1f}°"
             lines.append(f"neutral attempt {ln['attempt']}: {outcome}{extra}")
         self.status.config(text="\n".join(lines))
+        if self.script is not None:
+            self._guided_refresh(st.get("last_neutral"))
         self.gate.config(text="TRACKING USABLE" if gate.usable else "NOT USABLE: " + ", ".join(gate.reasons),
                          fg=OK if gate.usable else BAD)
         self.info.config(text="angles are display-only Z-Y′-X″ of head orientation (not neck/cervical angles)")
