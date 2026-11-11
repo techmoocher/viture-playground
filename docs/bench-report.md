@@ -19,6 +19,7 @@ Each run below was approved by the operator before it started, with its setup st
 | R6a, first attempt | 2026-11-11 | 4–6 | Flat table, tape lines, wedge; handled by the operator, not worn | **No result: no neutral capture or segment was marked.** The viewer opened at 1000×700 on a 1280×800 screen (752 px usable), so its control bar at the bottom was off-screen. Fixed: the controls are now at the top, the window fits the screen, and each press is confirmed in the window.<br>Kept for the gap observation: 185 s, 36 672 samples, **9 gaps of 295–599 ms (≈ 776 samples missing)**, all while the glasses were being handled. They are in pairs about 0.4–0.8 s apart, a ≈ 600 ms gap then a ≈ 300 ms gap, at 81.8/82.6 s and 98.3/98.7 s. They fit the 297 ms pause at pickup in the earlier viewer run (step 9b). Session `20261111T043318Z_bench_fixture_bdbf687f` |
 | R6a, second attempt | 2026-11-11 | 4–6 | Same; viewer with the controls at the top | **No result: no segment was marked**; the command log holds only 9 neutral captures. The first, on line A, was accepted (0.0029°, tilt 5.1°). Of the other 8, 6 were accepted and 2 rejected (`invalid_samples_in_window`), at tilts from 0.2° to 89.5°. Start/End segment work when invoked directly, so the manual controls were too error-prone while handling the glasses: a label, two clicks per step, and an N shortcut that also fires while typing outside the label box.<br>Replaced by the guided scripts (`view --script r6a`). 0 gaps in 383 s. Session `20261111T043909Z_bench_fixture_026263ce` |
 | **R6a (guided)** | 2026-11-11 | 4–6 | Flat table with tape lines A/B and a wedge; guided script `r6a`; not worn | **Valid.** 1 neutral capture (accepted, 0.22°, tilt 5.4°) and 4 segments; 0 gaps in 165 s; 8 duplicate timestamps. Every sign and axis matches the documented conventions; see "R6a results" below. Session `20261111T045253Z_bench_fixture_c19c4fb1` |
+| **R6b (guided)** | 2026-11-11 | 7 (U1) | Glasses fixed on the wedge (~55° tilt); the whole wedge turned on the table; guided script `r6b`; not worn | **U1 resolved: the SDK quaternion maps head → tracking frame (`q_WH`)**, as the processing assumes. 2 segments, 0 gaps, 4 duplicate timestamps; see "R6b results" below. Session `20261111T045720Z_bench_fixture_e7add480` |
 
 ### R2 results (240 Hz requested, upright on a table, stationary, 600 s)
 
@@ -80,6 +81,24 @@ Observations. These are engineering facts about this device, setup and firmware,
   against 40–90° movements.
 - **No gaps occurred while the glasses were handled,** here or in the second R6a attempt (0 in 383 s). The 9 gaps of
   300–600 ms in the first attempt are therefore not simply caused by handling. To be examined in step 9b.
+
+### R6b results (step 7, quaternion direction U1)
+
+For a rotation about the tracking-frame vertical, the documented reading (head → tracking) predicts that
+`P_track = q_e ⊗ conj(q_s)` has a vertical axis and `P_head = conj(q_s) ⊗ q_e` is off vertical by about the start tilt.
+The inverse reading predicts the reverse. See bench-checklist.md, "Reading the U1 result".
+
+| Segment | Hold dispersion start / end | Tilt start → end | Net angle | `P_track` axis from vertical | `P_head` axis from vertical | Reading |
+|---|---|---|---|---|---|---|
+| `u1_pitched_about_vertical` | 0.43° / 1.11° | 55.0° → 58.8° | 161.4° | **2.6°** | **56.6°** | head → tracking, by a margin of > 50° |
+| `u1_rolled_about_vertical` | 0.46° / 0.79° | 54.1° → 26.1° | 94.2° | 19.6° | 39.6° | Not clean: the tilt changed by 28° during the turn, so the glasses shifted on the wedge (or the wedge tipped). It points the same way, but is not used quantitatively |
+
+- **The result is decisive.** The clean segment separates the two readings by about the start tilt (55°). The residual
+  2.6° is consistent with the 3.8° change in tilt during the turn, and with the table not being perfectly level.
+- **It agrees with R6a `yaw_right_90`:** 0.3° against 6.0° at a 6.2° start tilt.
+- **Consequence: no processing change is needed.** `quat_rel = conj(q0) ⊗ q_WH` is the head-frame rotation relative to the
+  neutral, as documented.
+- **The rolled variant could be repeated for completeness.** It does not change the conclusion.
 
 ### Rate per frequency (step 2; stationary on the table, pose mode)
 
