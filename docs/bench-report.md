@@ -7,7 +7,43 @@ Each run below was approved by the operator before it started, with its setup st
 | Run | Date | Step | Setup | Result |
 |---|---|---|---|---|
 | R1 | 2026-11-10 | 1 Identity | Glasses connected; no streaming | SDK 2.4.2; PID 0x101D; market name "Pro"; device type 0 (GEN1); firmware `07.0.03.013_20250422`; native DOF false. Frequencies supported: pose 60/90/120/240 Hz (not 500/1000); raw 60/90/120/240/500 Hz (not 1000). Identical to the earlier probe |
-| R2 | 2026-11-10 | 3, and 2 at 240 Hz | Approved as upright on a rigid stand, untouched; neutral capture at 2 s | **Aborted after 455 s, not stationary: not a characterisation result.**<br>Neutral capture rejected (`dispersion_exceeds_tau_stab`, 7.0° within the 3 s window; tilt 8.8°).<br>The orientation kept moving: the spread within 10 s windows was mostly 1–10°, and 23–56° around 410–440 s. An untouched rigid placement earlier stayed within 0.011°.<br>Stopped on the operator's request by ending the process, so `session.json` has no closing summary. The session's `fixture` / `stationary` labels do not match what was recorded.<br>Timing only, preliminary: 92 259 samples, 202.59 Hz achieved over the run.<br>Session `20261111T031659Z_bench_fixture_0dc0ba01` was deleted on the operator's decision, so the figures above are all that remain. To be repeated with a rigid support agreed with the operator and a placement check before recording |
+| R2, first attempt | 2026-11-10 | 3, and 2 at 240 Hz | Approved as upright on a rigid stand, untouched; neutral capture at 2 s | **Aborted after 455 s, not stationary: not a characterisation result.**<br>Neutral capture rejected (`dispersion_exceeds_tau_stab`, 7.0° within the 3 s window; tilt 8.8°).<br>The orientation kept moving: the spread within 10 s windows was mostly 1–10°, and 23–56° around 410–440 s. An untouched rigid placement earlier stayed within 0.011°.<br>Stopped on the operator's request by ending the process, so `session.json` has no closing summary. The session's `fixture` / `stationary` labels do not match what was recorded.<br>Timing only, preliminary: 92 259 samples, 202.59 Hz achieved over the run.<br>Session `20261111T031659Z_bench_fixture_0dc0ba01` was deleted on the operator's decision, so the figures above are all that remain. To be repeated with a rigid support agreed with the operator and a placement check before recording |
+| Placement check before R2 | 2026-11-11 | — | Upright on a hard flat table, cable taped; set up by the operator | 15.1 s, nothing recorded: tilt from upright 4.7°; maximum deviation from the mean 0.015° (RMS 0.003°); 0 invalid samples; **1 gap** (≈ 120 samples missing, 194.4 Hz over the check). The check stores no data, so where the gap fell is unknown. It did not recur in R2 |
+| **R2** | 2026-11-11 | 3, and 2 at 240 Hz | Same setup, table untouched; neutral capture at 2 s | **Valid stationary fixture run, 600 s.** Session `20261111T034301Z_bench_fixture_710efe0c`; see "R2 results" below |
+
+### R2 results (240 Hz requested, upright on a table, stationary, 600 s)
+
+Stillness was watched during the run: the maximum deviation was 0.010–0.014° per 2-minute block, and the tilt was 4.7° throughout.
+
+| Quantity | Value |
+|---|---|
+| Samples | 121 590 delivered; shim ring overflow 0; pipeline seq gaps 0 |
+| Invalid | 61 (0.05%), all `ts_duplicate`; no other invalidating flag |
+| Achieved rate | 202.483 Hz on the device clock, 202.480 Hz on the host clock (requested and selected 240 Hz) |
+| Gaps | 0 (r_ref 202.5 and the candidate 202.483 give the same result). Longest gap-free stretch: 600.2 s at 202.483 Hz |
+| Device intervals | 4 ms: 9 804 · 5 ms: 109 372 · 6 ms: 2 352 (1 ms timestamp resolution). p50 5 ms, max 6 ms, SD 0.31 ms |
+| Host intervals | p50 4.998 ms, p99 6.007 ms, max 6.478 ms, SD 0.330 ms |
+| Clock relation | Skew 14.9 ppm. Arrival residual SD 0.438 ms, p99−p1 1.855 ms. Relative lateness p99 2.15 ms, max 2.64 ms (relative, not absolute, latency) |
+| Neutral capture | Accepted: 609 samples, maximum dispersion 0.0051°, RMS 0.0023°, tilt 4.7° |
+| Angular jitter (SD of detrended rotation vector) | x 0.000493°, y 0.000588°, z 0.0000414°; geodesic RMS 0.000768° |
+| Apparent drift | x 0.00138, y −0.00093, z 0.00011 °/min; geodesic 0.00138 °/min. Net change 0.0174°, maximum excursion 0.0272° over 10 min |
+| Change vs time lag (RMS) | 5 ms: 0.00005° · 50 ms: 0.00043° · 250 ms: 0.0013° · 1 s: 0.0026° · 5 s: 0.0044° · 30 s: 0.0059° |
+
+Observations. These are engineering facts about this device, setup and firmware, not validated limits:
+- **The SDK output is smooth.** Sample-to-sample changes (first-difference estimate 3.3·10⁻⁵°) are about 15× smaller than
+  the 1-s detrended jitter. The residual motion is a slow, correlated wander, not white noise. This is consistent with
+  filtering inside the SDK; the filter itself is undocumented.
+- **The z component (about the glasses' up axis) is about 10× quieter than x and y,** in both jitter and drift.
+- **All 61 duplicate timestamps are distinct samples.** Their values differ from the previous sample. Each arrives
+  0.99–1.07 ms after the previous one on the host clock, with normal 4–5 ms device intervals around it. So the device
+  delivers an extra sample within the same millisecond, or labels it one millisecond early. They remain invalidating
+  (conservative). Whether to keep that is an open question; the rate is about one per 10 s.
+- **`stale_begin` appears once, at 600.3 s.** That is when streaming stopped at the end of the run. It is not an interruption.
+- **`r_ref` for 240 Hz adopted: 202.483 Hz** (was 202.5, preliminary), following "Deriving r_ref" in the checklist, and
+  re-checked with 0 gaps.
+- **Reporting fixes found with this run:**
+  - `pipeline seq gaps` had counted the invalid samples, which are kept, not lost. It now uses every sample.
+  - Small angles printed as 0.0000. They now show significant digits.
 
 ## Earlier runs (before the approval rule; preliminary)
 

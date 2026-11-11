@@ -13,20 +13,29 @@ from headmusic.metrics.timing import timing_report
 from headmusic.recording.reader import iter_processed, iter_raw_imu, load_meta, read_jsonl
 
 
-def analyze_session(session_dir: Path, stationary: Optional[bool] = None) -> dict:
+def analyze_session(session_dir: Path, stationary: Optional[bool] = None,
+                    reference_rate_hz: Optional[float] = None) -> dict:
+    """Write analysis/report.json and report.md.
+
+    reference_rate_hz overrides the session's recorded r_ref for the timing metrics only (gap count, loss,
+    longest gap-free stretch), to re-check a candidate r_ref. The per-sample flags in processed_pose.csv
+    are not changed; the report records the override."""
     session_dir = Path(session_dir)
     meta = load_meta(session_dir)
     cfg = meta.get("config", {})
     flags_cfg = cfg.get("flags", {})
     k_gap = float(flags_cfg.get("k_gap", 1.5))
     res = float(flags_cfg.get("ts_resolution_ns", 1_000_000))
-    ref_rate = meta.get("processing", {}).get("reference_rate_hz")
+    recorded_ref = meta.get("processing", {}).get("reference_rate_hz")
+    ref_rate = recorded_ref if reference_rate_hz is None else float(reference_rate_hz)
     report = {"session_id": meta.get("session_id"), "condition": meta.get("condition"),
               "mounting": meta.get("mounting"), "source": meta.get("source", {}).get("kind"),
               "device": {k: meta.get("device", {}).get(k) for k in ("market_name", "pid", "firmware", "sdk_version")},
               "imu": {k: meta.get("imu", {}).get(k) for k in ("mode", "frequency_requested_hz", "frequency_selected_hz",
                                                                "frequency_selection_reason")},
-              "parameters_note": "all thresholds provisional engineering defaults (not validated limits)"}
+              "parameters_note": "all thresholds provisional engineering defaults (not validated limits)",
+              "reference_rate_hz": {"recorded": recorded_ref, "used_for_timing": ref_rate,
+                                    "overridden": reference_rate_hz is not None}}
     stationary = meta.get("stationary", False) if stationary is None else stationary
 
     processed_path = session_dir / "processed_pose.csv"
@@ -46,7 +55,9 @@ def analyze_session(session_dir: Path, stationary: Optional[bool] = None) -> dic
                 continue
             dev = np.array([r.device_ts_raw for r in vr], dtype=np.int64)
             host = np.array([r.host_rx_monotonic_ns for r in vr], dtype=np.int64)
-            seq = np.array([r.seq for r in vr], dtype=np.int64)
+            # seq continuity is a property of delivery, so it uses every sample of the connection: an invalid
+            # sample is kept in the files, not lost, and must not count as a pipeline seq gap
+            seq = np.array([r.seq for r in rows if r.connection_id == cid], dtype=np.int64)
             entry = {"timing": timing_report(dev, host, seq, ref_rate, k_gap, res)}
             if stationary:
                 q = np.array([r.quat for r in vr], dtype=float)
@@ -94,10 +105,20 @@ def _f(x, nd=3):
     return "—" if x is None else (f"{x:.{nd}f}" if isinstance(x, float) else str(x))
 
 
+def _g(x, sig=3):
+    """Small angles: significant digits, so values far below 0.0001° do not print as 0."""
+    return "—" if x is None else f"{x:.{sig}g}"
+
+
 def to_markdown(r: dict) -> str:
     L = [f"# Session report {r.get('session_id')}", "",
          f"- condition: {r.get('condition')} · mounting: {r.get('mounting')} · source: {r.get('source')}",
-         f"- device: {r.get('device')}", f"- imu: {r.get('imu')}", f"- {r.get('parameters_note')}", ""]
+         f"- device: {r.get('device')}", f"- imu: {r.get('imu')}", f"- {r.get('parameters_note')}"]
+    ref = r.get("reference_rate_hz") or {}
+    if ref.get("overridden"):
+        L.append(f"- **timing metrics use r_ref = {ref.get('used_for_timing')} Hz (override; recorded "
+                 f"{ref.get('recorded')} Hz). Per-sample flags are unchanged.**")
+    L.append("")
     if "samples" in r:
         L += [f"Samples: {r['samples']}", "", f"Flag counts: {r.get('flag_counts')}", ""]
     for cid, c in r.get("connections", {}).items():
@@ -123,10 +144,10 @@ def to_markdown(r: dict) -> str:
                 j, d = a["angular_jitter_deg"], a["apparent_drift"]
                 L += [f"## Connection {cid} — stationary angular metrics (mounting: {a.get('mounting')})", "",
                       "| metric | x | y | z | geodesic |", "|---|---|---|---|---|",
-                      f"| angular jitter SD (°) | {_f(j['sd_x'], 4)} | {_f(j['sd_y'], 4)} | {_f(j['sd_z'], 4)} | RMS {_f(j['geodesic_rms'], 4)} |",
-                      f"| apparent drift (°/min) | {_f(d['slope_deg_per_min']['x'], 4)} | {_f(d['slope_deg_per_min']['y'], 4)} | {_f(d['slope_deg_per_min']['z'], 4)} | {_f(d['slope_deg_per_min']['geodesic'], 4)} |",
-                      "", f"Net change {_f(d['net_change_deg'], 4)}°, max excursion {_f(d['max_excursion_deg'], 4)}°, "
-                          f"first-difference jitter estimate {_f(j['first_difference_estimate'], 4)}°.", ""]
+                      f"| angular jitter SD (°) | {_g(j['sd_x'])} | {_g(j['sd_y'])} | {_g(j['sd_z'])} | RMS {_g(j['geodesic_rms'])} |",
+                      f"| apparent drift (°/min) | {_g(d['slope_deg_per_min']['x'])} | {_g(d['slope_deg_per_min']['y'])} | {_g(d['slope_deg_per_min']['z'])} | {_g(d['slope_deg_per_min']['geodesic'])} |",
+                      "", f"Net change {_g(d['net_change_deg'])}°, max excursion {_g(d['max_excursion_deg'])}°, "
+                          f"first-difference jitter estimate {_g(j['first_difference_estimate'])}°.", ""]
     L += SEG.to_markdown(r.get("segments", []))
     if r.get("neutral_captures"):
         L += ["## Neutral captures", "",

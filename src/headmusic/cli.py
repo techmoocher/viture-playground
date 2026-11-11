@@ -295,7 +295,7 @@ def cmd_replay(args) -> int:
 def cmd_analyze(args) -> int:
     from headmusic.metrics.report import analyze_session
     stationary = True if args.stationary else None
-    analyze_session(Path(args.session), stationary=stationary)
+    analyze_session(Path(args.session), stationary=stationary, reference_rate_hz=args.reference_rate_hz)
     print((Path(args.session) / "analysis" / "report.md").read_text(encoding="utf-8"))
     return 0
 
@@ -375,6 +375,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("analyze", help="timing / jitter / drift report")
     p.add_argument("session")
     p.add_argument("--stationary", action="store_true", help="compute stationary angular metrics")
+    p.add_argument("--reference-rate-hz", type=float,
+                   help="re-check a candidate r_ref: use it for the timing metrics instead of the recorded value")
     p = sub.add_parser("export", help="denormalised per-row export (protocol §10 fields)")
     p.add_argument("session")
     p.add_argument("--out")

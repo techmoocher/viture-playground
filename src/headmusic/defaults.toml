@@ -27,10 +27,13 @@ tau_norm = 1e-3                # |‖q‖ − 1| above this sets norm_deviation 
 eps_zero = 1e-6                # ‖q‖ below this sets zero_norm (invalidating)
 euler_singular_deg = 89.0      # |display pitch| above this sets euler_near_singular (numeric guard)
 
-# Fixture-measured achieved rates (Hz) for the VITURE Pro (PID 0x101D), keyed by selected frequency.
-# Source: read-only probe 2026-11-10 (docs/phase1-proposal.md §3.5). Replace with bench-report values.
+# Fixture-measured achieved rates (Hz) for the VITURE Pro (PID 0x101D), keyed by selected frequency: the
+# achieved device-clock rate over the longest gap-free stretch of an approved stationary fixture run
+# (docs/bench-checklist.md, "Deriving r_ref"). Frequencies without an entry use the adaptive reference.
+# 240: 202.483 from G0 run R2, session 710efe0c (2026-11-11 UTC), stretch 600.2 s, re-checked with this
+#      value (0 gaps). The earlier preliminary value was 202.5 (probe of unknown placement).
 [flags.r_ref_hz.pose]
-"240" = 202.5
+"240" = 202.483
 
 [flags.r_ref_hz.raw]
 

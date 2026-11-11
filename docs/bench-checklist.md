@@ -134,8 +134,10 @@ It came from a preliminary run whose placement was unknown, and the other freque
   run at that frequency. `analyze` reports it as "longest gap-free stretch: rate / duration".
 - **Adopt** the candidate in `defaults.toml`, with a comment naming the session id, the stretch duration and the value. Keep the
   preliminary value in `bench-report.md` for comparison.
-- **Re-check.** The stretch depends on the `r_ref` used to find the gaps. Reprocess the run with the new value
-  (`replay --reprocess --config …`) and confirm the gap count and the stretch do not change.
+- **Re-check.** The stretch depends on the `r_ref` used to find the gaps. Analyse the run with the candidate value
+  (`analyze <session> --reference-rate-hz <candidate>`) and confirm the gap count and the stretch do not change.
+  Then analyse it again without the option, so the stored report is the standard one.
+  `replay --reprocess` cannot do this check: it reuses the reference rate recorded in the session.
 
 After each run, write the outcome into [bench-report.md](bench-report.md) and update the "Status" column of
 [conventions.md](conventions.md). Choosing the `tau_stab_deg` value (O6) is a research-team decision, informed by steps 3 and 8.
