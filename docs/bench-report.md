@@ -1,6 +1,16 @@
 # Bench report (G0) — in progress
 
-**Status:** preliminary. Every hardware run listed here happened on 2026-11-10, **before the operator-approval rule was in
+## Approved runs (run plan in [bench-checklist.md](bench-checklist.md))
+
+Each run below was approved by the operator before it started, with its setup stated.
+
+| Run | Date | Step | Setup | Result |
+|---|---|---|---|---|
+| R1 | 2026-11-10 | 1 Identity | Glasses connected; no streaming | SDK 2.4.2; PID 0x101D; market name "Pro"; device type 0 (GEN1); firmware `07.0.03.013_20250422`; native DOF false. Frequencies supported: pose 60/90/120/240 Hz (not 500/1000); raw 60/90/120/240/500 Hz (not 1000). Identical to the earlier probe |
+
+## Earlier runs (before the approval rule; preliminary)
+
+**Status:** preliminary. Every hardware run in this section happened on 2026-11-10, **before the operator-approval rule was in
 place**, so the glasses' placement was not agreed beforehand.
 
 The operator later confirmed that the glasses were **lying upside down on the table**, and that during the viewer run they
@@ -12,7 +22,7 @@ How to use these runs:
 - Orientation results (stability, drift) come from an upside-down placement that is not representative of use.
 - None of them are characterisation results. Use them only to plan the approved runs in [bench-checklist.md](bench-checklist.md).
 
-## Runs so far (conditions unconfirmed)
+### Runs (conditions unconfirmed)
 
 | Run | What | Result | Caveat |
 |---|---|---|---|
@@ -31,7 +41,7 @@ Lessons for the approved runs:
   on a rigid stand, never upside down.
 - **No automatic neutral capture** unless the operator has confirmed that placement.
 
-## Offline look at existing data (2026-11-10, preliminary)
+### Offline look at existing data (2026-11-10, preliminary)
 
 From the viewer session above, which is mislabelled and only partly on the table. These are observations to check in the approved runs, not results.
 
