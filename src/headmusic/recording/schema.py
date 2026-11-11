@@ -13,7 +13,7 @@ import math
 import struct
 from typing import Optional
 
-SCHEMA_VERSION = "1.1.0"  # 1.1.0: calibration records gain q0_tilt_from_upright_deg (additive)
+SCHEMA_VERSION = "1.2.0"  # 1.2.0: instrument files + session.json "instrument" (additive); 1.1.0: q0 tilt
 
 RAW_POSE_COLUMNS = [
     "seq", "connection_id", "host_rx_monotonic_ns", "device_ts_raw",

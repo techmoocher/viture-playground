@@ -57,7 +57,9 @@ Research protocol: [docs/research/](docs/research/).
 | `headmusic replay <session> --view [--speed 1]` | Replay into the viewer, no glasses needed |
 | `headmusic analyze <session> [--stationary]` | Timing, jitter and drift report, plus per-segment net rotation for the bench checks (`analysis/report.md`) |
 | `headmusic export <session>` | Denormalised per-row export with protocol §10 fields |
-| `headmusic synth <scenario>` | Deterministic synthetic session: stationary, faults, reconnect, sign_flip, yaw_wrap, dropped, sustained_loss |
+| `headmusic synth <scenario>` | Deterministic synthetic session: stationary, faults, reconnect, sign_flip, yaw_wrap, dropped, sustained_loss, chords |
+| `headmusic synth chords --instrument` | Phase 2: synthetic chord tour through the gesture FSM, with interaction logs |
+| `headmusic replay <session> --reprocess --instrument` | Phase 2: re-run the gesture FSM offline; checks `interaction_events.jsonl` is byte-identical |
 
 Sessions are written to `data/sessions/` (git-ignored). Run commands with `.venv\Scripts\python -m headmusic …`
 or `.venv\Scripts\headmusic …`.
@@ -80,6 +82,8 @@ Unit tests need no glasses. Hardware tests are opt-in; run them only with the gl
 | [conventions.md](docs/conventions.md) | Frames, quaternions, Euler conversion, signs, units, clocks |
 | [quality-and-metrics.md](docs/quality-and-metrics.md) | Sample flags, tracking gate, neutral capture, metric definitions, provisional parameters |
 | [data-format.md](docs/data-format.md) | Session files, columns, mapping to protocol §10, export |
+| [instrument.md](docs/instrument.md) | Phase 2 gesture state machine: regions, states, resets, logs |
+| [phase2-proposal.md](docs/phase2-proposal.md) | Phase 2 design and milestones 2A–2D |
 | [sdk-notes.md](docs/sdk-notes.md) | Verified SDK and device behaviour vs the documentation |
 | [bench-checklist.md](docs/bench-checklist.md) | G0 bench procedure (run with the operator) |
 | [bench-report.md](docs/bench-report.md) | Results so far (preliminary) |

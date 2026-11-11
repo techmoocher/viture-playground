@@ -33,6 +33,16 @@ def test_core_modules_do_not_touch_hardware(path):
     assert not bad, f"{path.name} imports {bad}"
 
 
+INSTRUMENT_FORBIDDEN = FORBIDDEN_FOR_CORE + ("headmusic.music",)
+
+
+@pytest.mark.parametrize("path", sorted((SRC / "instrument").rglob("*.py")), ids=lambda p: p.name)
+def test_instrument_is_independent_of_acquisition_audio_and_ui(path):
+    """Phase 2: gesture recognition never touches sensors, the DLL, audio output or the UI."""
+    bad = {m for m in imports_of(path) if m.startswith(INSTRUMENT_FORBIDDEN)}
+    assert not bad, f"{path.name} imports {bad}"
+
+
 def test_only_acquisition_uses_ctypes():
     users = {p.relative_to(SRC).parts[0] for p in SRC.rglob("*.py") if "ctypes" in imports_of(p)}
     assert users <= {"acquisition"}

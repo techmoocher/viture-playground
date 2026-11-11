@@ -60,3 +60,39 @@ drain_interval_ms = 5          # how often the drain thread empties the native r
 reconnect_poll_s = 1.0         # USB re-enumeration period (disconnect detection and reconnect)
 auto_reconnect = true
 sdk_log_level = 1              # 0 none, 1 error, 2 info, 3 debug
+
+# ---------------------------------------------------------------------------------------------- Phase 2
+# Instrument (gesture FSM). docs/phase2-proposal.md §3. EVERY value below is a PROVISIONAL ENGINEERING
+# DEFAULT for bench use, to be set by the research team (docs/research/phase2-open-questions.md). None is a
+# validated ergonomic, comfort or safety limit. Angles are yaw_rel: the heading of the glasses' forward axis
+# relative to the neutral reference (+ = turn left), equal to the documented display yaw.
+[instrument]
+start_enabled = true
+neutral_yaw_deg = 4.0          # neutral (idle) zone |yaw_rel| <= this; left beyond this + hysteresis
+hysteresis_deg = 1.5           # enter a zone inside its interval, stay while within the interval ± this
+dwell_ms = 500.0               # protocol §6 candidate range 400–600 ms (to be piloted and frozen)
+cooldown_ms = 300.0            # no new dwell within this time after a commit (placeholder)
+rearm_hold_ms = 0.0            # time in the neutral zone needed to re-arm after a commit or reset
+max_elevation_deg = 89.0       # numeric guard: forward axis must be within this of the neutral horizontal plane
+reset_on_gap_before = true     # any flagged sample gap resets the gesture, even below the gate's T_stale
+
+# Bench layout only (clear separation for testing by hand or on a fixture), not an ergonomic layout.
+[[instrument.yaw_regions]]
+chord = "C"
+yaw_min_deg = 22.0
+yaw_max_deg = 40.0
+
+[[instrument.yaw_regions]]
+chord = "G"
+yaw_min_deg = 8.0
+yaw_max_deg = 18.0
+
+[[instrument.yaw_regions]]
+chord = "Am"
+yaw_min_deg = -18.0
+yaw_max_deg = -8.0
+
+[[instrument.yaw_regions]]
+chord = "F"
+yaw_min_deg = -40.0
+yaw_max_deg = -22.0
