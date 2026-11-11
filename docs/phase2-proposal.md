@@ -1,159 +1,146 @@
-# Phase 2 — Basic Four-Chord Instrument: Engineering Proposal
+# Phase 2 — Playable Four-Chord Instrument: Engineering Proposal
 
-**Revision:** 1 (2026-11-11). **Status:** proposal for your review. **Nothing in it is implemented.** Implementation starts only after you approve it, with your decisions on §9.
-**Scope:** a basic, head-controlled four-chord instrument built on the Phase 1 pipeline, tested on the bench and with synthetic and replayed data. No experiment, no participants, no comfort model (§8).
+**Revision:** 2 (2026-11-11). It incorporates your Phase 2 brief (§0). Revision 1 is in this file's git history.
+**Status:** approved direction. Milestone **2A is in progress**; 2B–2D follow in order (§7).
+**Scope:** a playable, real-time, head-controlled instrument with four chords (C, G, Am, F) on the Phase 1 pipeline. No comfort models, no participant calibration, no formal experiments and no ML (§8).
 
-| Input | Status |
-|---|---|
-| Protocol v1.0 (`docs/research/Head_Controlled_Music_Experiment_and_Calibration_Protocol_v1.md`) | Read in full. §6 (chord layout, state machine), §8 (interaction outcomes), §10.3 (`interaction_events`), §11 (gates G1, G2, technical tests) apply directly |
-| [phase1-proposal.md](phase1-proposal.md) (D1–D7, O1–O6) | Read. D2 ("invalid or stale tracking must never trigger musical commands") is the central constraint |
-| [bench-report.md](bench-report.md) (G0) | Read. Findings used in §4 |
-| [conventions.md](conventions.md), [quality-and-metrics.md](quality-and-metrics.md), [threats-to-validity.md](threats-to-validity.md), [data-format.md](data-format.md) | Read; authoritative for frames, flags, gate and file formats |
-| Code in `src/headmusic/` | Read: `tracking/gate.py`, `pipeline.py`, `orientation/processor.py`, `acquisition/replay_source.py`, `acquisition/synthetic.py`, `recording/writer.py`, `viewer/app.py`, `cli.py` |
-| Research report (O1) | **Still missing.** This proposal must be re-checked against it when it arrives |
+**Every angle, time and radius in this document and in `defaults.toml` is a provisional engineering default.** Each one is configurable and recorded in `session.json`. None is an ergonomic, comfort or safety claim, and none is validated. The fixture results from G0 describe the device on a table, **not** worn use or usability.
 
-**Terminology.** As in Phase 1: head orientation *relative to the tracking frame* (`q_WH`) and *relative to the neutral reference* (`q_rel`). Directions are described as "turn left/right", "nose up/down" and "tilt right/left side down", in the display convention of conventions.md. No anatomical terms.
-
-**Every angle, time and radius in this document is a provisional engineering default** to be set by the research team. None is an ergonomic, comfort or safety claim, and none is presented as validated.
+**Terminology** follows [conventions.md](conventions.md): head orientation relative to the tracking frame (`q_WH`) or to the neutral reference (`q_rel`). Directions are given as turn left/right, nose up/down and tilt. No anatomical terms.
 
 ---
 
-## 1. Summary
+## 0. Decision log (your Phase 2 brief, 2026-11-11)
 
-- A new package `headmusic.instrument` plugs into the existing pipeline as a **consumer** of processed samples, events and commands. Acquisition, processing (`quat_rel`), recording, replay and `TrackingGate` are reused unchanged. The pipeline gains one small, additive hook (a consumer list, §2.2).
-- Chord selection uses the protocol's **single dwell-to-commit state machine** (`neutral → aiming → dwell-armed → committed → return-to-neutral → neutral`, protocol §6). Targets are four neutral-relative quaternions; a sample is "on" a target by **geodesic angle**, with hysteresis. A trigger gesture is listed as an option but not proposed (protocol §6 makes it a future extension).
-- **Safety rule:** the recogniser re-checks the gate on every sample. Any interruption (gate unusable, connection change, new neutral, neutral capture in progress) resets the gesture state and requires a fresh return to neutral before anything can be committed again.
-- **Determinism:** the recogniser is a pure function of its inputs. Its only time-dependent live input (an interruption detected between samples) is logged at its `seq` position, like an operator command, and re-injected on replay. Replayed decisions are then byte-identical to live ones.
-- **Output:** chord events go to a backend interface. Proposed baseline: Windows' built-in MIDI API (`winmm`) through `ctypes`, with no new dependency, plus a null/log backend for tests. Audio synthesis is optional and later.
-- **Blockers:** wearing the glasses to try the instrument waits for **O3**. Everything else in this proposal can be built and tested without anyone wearing them.
+| Decision | Where it lands |
+|---|---|
+| Phase 1 is validated enough to start Phase 2. Fixture measurements are not human usability measurements | §4.2; [threats-to-validity.md](threats-to-validity.md) TV12 |
+| **Selection by configurable yaw target regions** relative to the calibrated neutral | §3.2. This replaces revision 1's geodesic target zones. Those stay a later option and are listed as a research question |
+| Dwell activation with visual progress | §3.3, 2C |
+| **Audible playback** with correct note-on/note-off | §5, 2B |
+| A clear neutral (idle) state where the user can rest | §3.3 (`neutral`, `unarmed`, `inactive`) |
+| Configurable targets, dwell, hysteresis and re-arming | §3.4 |
+| Emergency stop / silence | §5.3 (`panic`) |
+| Live feedback: tracking validity, selected chord, progress, sounding chord | 2C |
+| Structured event logs for later analysis | §6 |
+| Synthetic input and replay of recorded sessions | §6, every milestone |
+| Docs and automated tests | each milestone (§7) |
+| Reuse the Phase 1 modules; recognition is independent of acquisition and audio; an explicit FSM; quaternions internally | §2, §3 |
+| Cancel pending gestures on invalid, stale or disconnected tracking, or on a neutral change; old queued data never triggers; re-arm deliberately; a fresh neutral after reconnect | §4 |
+| Stop sounding notes on an interruption; define accompaniment behaviour | §5.3 |
+| Separate timestamps: target entry, dwell start, recognition, commit, MIDI/audio dispatch, quantized onset. Estimated and measured latency kept apart | §6.2 |
+| Four milestones 2A–2D with acceptance criteria and tests | §7 |
+| The protocol stays unchanged; methodological questions go to the research docs | [research/phase2-open-questions.md](research/phase2-open-questions.md) |
 
 ---
 
-## 2. Reuse and integration
-
-### 2.1 What is reused, unchanged
-
-| Component | Role in Phase 2 |
-|---|---|
-| `acquisition/` (`VitureSdkSource`, capture shim, `ReplaySource`, `SyntheticSource`) | Unchanged. Still the only package that touches the glasses' DLL |
-| `orientation/OrientationProcessor` | Unchanged. Supplies `ProcessedSample.quat_rel` (= `conj(q0) ⊗ q_WH`, canonical `w ≥ 0`), `valid`, `flags`, `connection_id`, `neutral_calibration_id` |
-| `tracking/TrackingGate` | Unchanged. The **only** source of "usable for control" (data-age staleness, validity, connection, neutral) |
-| `recording/SessionWriter` | Unchanged for existing files. The instrument writes its own files next to them (§5.4) through the same flush policy |
-| Neutral capture (`capture_neutral` command, stability check, retries) | Unchanged. The instrument never captures a neutral itself; it reacts to the result |
-| Viewer | Reused as the host for a HUD panel (§3.6); its existing status display stays |
-
-### 2.2 How it plugs in
+## 1. Architecture
 
 ```
- acquisition ──► queue ──► [pipeline thread] ──► raw writer → processor → processed writer
-                                                        │
-                                                        ├─► gate.on_sample(ps)
-                                                        │
-                                                        └─► consumers: instrument.on_sample(ps, gate.status(ps.host_rx))  ← new hook
-                              events  ──► gate.on_event ──► instrument.on_event(e)
-                              commands ──► processor     ──► instrument.on_command(c)
-                              idle tick (queue timeout, ≤ 20 ms) ──► instrument.on_tick(gate.status(now))
-                                                        │
-                                       instrument ──► InteractionEvents ──► interaction writer
-                                                                       └──► output backend (MIDI / null)
+ acquisition (unchanged) ──► queue ──► [pipeline thread]
+                                         raw writer → OrientationProcessor → processed writer
+                                         TrackingGate.on_sample / on_event
+                                         consumers (new, additive hook):
+                                           InstrumentConsumer ──► GestureFSM (pure)  ──► InteractionEvents
+                                                     │                                    │
+                                                     ├─ logs live-only inputs              ├─► interaction log (deterministic)
+                                                     │  (stale ticks, late processing)     └─► ChordEngine (2B) ──► OutputBackend
+                                                     └─ gate.status(at sample arrival)                              (winmm MIDI | null)
+                                         idle tick (≤ 20 ms) ──► consumers.on_tick(now)
+ viewer / HUD (2C) reads snapshots only
 ```
 
-- **The one change to existing code:** `Pipeline` accepts an optional list of consumers and calls them after the gate, in the pipeline thread. Today it calls `gate.on_sample` directly and has no consumer list (Phase 1 §4 rule 7 named the extension point but did not build it). About 20 lines, additive; Phase 1 behaviour and outputs are unchanged when the list is empty, and the existing replay byte-identity tests guard that.
-- **Acquisition stays separate from processing.** The instrument never imports `acquisition`, ctypes for the glasses, or the DLL. The import-graph test gains: `instrument` may import `types`, `orientation.quaternion` (math only) and `tracking`; `instrument.output` is the second, separate hardware boundary (it touches `winmm.dll`), and nothing but the CLI imports it.
-- **One thread, one order.** The instrument runs in the pipeline thread, so it sees samples, events and commands in exactly the order they were processed and recorded. That order is what replay reproduces.
-- **Same entry points.** `headmusic play` (live) and `headmusic replay <session> --instrument` (offline or real time) build the same pipeline with the instrument as a consumer.
-
-### 2.3 Inputs the recogniser sees
-
-| Input | Content | Deterministic? |
+| Package | Role | May import |
 |---|---|---|
-| `on_sample(ps, gs)` | Processed sample and the gate status evaluated at `now = ps.host_rx_monotonic_ns`, i.e. the data age at arrival | Yes: both depend only on recorded samples and events |
-| `on_event(e)` | `device_connected`, `device_disconnected` | Yes: already recorded and replayed |
-| `on_command(c)` | `capture_neutral` (start of a capture), instrument commands (`instrument_enable`, `instrument_disable`, `all_notes_off`) | Yes: recorded in `commands.jsonl` with `after_seq` |
-| `on_tick(gs)` | Live only: the gate became unusable *between* samples (a pause, a PC sleep) | **No, live timing.** So each tick that changes the recogniser's state is **logged as an input** with `after_seq` and re-injected on replay (§5.3). Ticks that change nothing are not logged |
-| `on_late_processing` | Live only: the pipeline thread processed a sample more than `T_stale` after its arrival (for example a long Python pause) | No. Same treatment: the suppression is logged as an input and replayed (§4.2) |
+| `instrument/regions.py` | Yaw regions, neutral zone, the region coordinate, config validation | `types`, `orientation.quaternion` |
+| `instrument/fsm.py` | `GestureFSM`: explicit finite-state machine; pure, reads no clock | the above, `tracking.gate` (for `GateStatus`) |
+| `instrument/consumer.py` | Pipeline adapter: gate check, live/replay inputs, logging | the above |
+| `instrument/log.py` | `interaction_events.jsonl`, `instrument_inputs.jsonl`, `interaction_timing.jsonl` | stdlib |
+| `music/` (2B) | `ChordEngine` (chord table, note on/off pairing, accompaniment, panic) and backends | `instrument` event types only |
+| `music/backends/winmm.py` (2B) | Windows MIDI out through `ctypes` | the **second hardware boundary**; imported only by the CLI |
 
-The recogniser reads no clock. Its only notion of time is the sample timestamps (§3.4).
+- **Unchanged:** acquisition, processor, recording, replay, `TrackingGate`. The one change to existing code is an optional `consumers` list in `Pipeline`, plus a calibration-record callback. With no consumers, Phase 1 output is byte-identical; the existing tests check this.
+- **The recogniser never touches sensors or audio.** It consumes `ProcessedSample` and `GateStatus`, and it emits events. The chord engine consumes those events and never sees samples.
+- **The import-graph test** is extended: `instrument` must not import `acquisition`, `ctypes`, `tkinter`, `pipeline` or `music`; only `acquisition` and `music/backends` may use `ctypes`.
+
+### Dependencies
+
+| Need | Choice | New dependency |
+|---|---|---|
+| Recognition, logging, replay | stdlib + existing code | none |
+| MIDI output | `winmm.midiOutShortMsg` via `ctypes` (Windows built-in) | none |
+| Audible sound | The built-in "Microsoft GS Wavetable Synth" (default MIDI device), or any synth on a user-chosen MIDI port | none |
+| Lower-latency built-in sound (optional, later) | numpy synthesis + `sounddevice` (PortAudio/WASAPI) as an optional extra | one optional package, only if the built-in synth's latency proves inadequate (O4) |
+| HUD | `tkinter`, already used by the viewer | none |
 
 ---
 
-## 3. Head-pose-to-chord mapping
+## 2. Inputs to the recogniser and determinism
 
-### 3.1 What the protocol fixes
-
-From protocol §6, followed here without change:
-- Four chords: **C major, G major, A minor, F major**; deterministic MIDI chord-on/chord-off events; optional software synthesis.
-- Input is **neutral-relative head rotation**; computation uses **quaternions** (protocol §0, §2.2). Euler angles are for display only.
-- **One shared state machine:** `neutral → aiming → dwell-armed → committed → return-to-neutral → neutral`, with dwell, hysteresis and cooldown. Dwell candidate **400–600 ms**, "calibrated through a separate pilot" (protocol §6, §11).
-- **No repeated nodding** to play beats; a **return-to-neutral gate** before the next commit.
-- Targets are **stable for a whole block**; a minimum **geodesic** separation between targets.
-- A **head-locked HUD** with target names, cursor, selection progress and a neutral indicator; not world-anchored, not gaze.
-- Nod trigger, roll modulation, beat-synchronous chords and continuous pitch bend are **future extensions** (protocol §6).
-- Record the **unquantized** commit time; quantization is optional and separate.
-
-Target placement by Models A/B/C and the optimiser is experiment work (§8). Phase 2 takes the four targets from a **configuration file**.
-
-### 3.2 Options for selecting a chord
-
-| Option | How it works | For | Against | Protocol |
-|---|---|---|---|---|
-| **S1. Geodesic target zones (proposed)** | Each chord has a target quaternion `t_i` (relative to neutral). The sample is in zone *i* if `θ(q_rel, t_i) ≤ r_enter`; it leaves when `θ > r_exit` (`r_exit > r_enter`, hysteresis). Nearest target wins if two qualify (cannot happen when separation > 2·r_exit, which config validation enforces) | Parameterisation-free; sign-invariant; matches the protocol's geodesic separation and the optimiser's `q_i` per chord; works for any target set B/C might produce later | Includes roll (tilt) in the distance, which the 2-D cursor cannot show (see §3.5) | Consistent |
-| S2. Euler boxes | Zone = yaw/pitch/roll intervals from display Euler | Easy to explain and draw | Uses Euler for computation, which the protocol reserves for display; boxes distort away from neutral; TV1 parameterisation issue | **Conflicts** with protocol §0/§2.2. Not proposed |
-| S3. Direction sectors | Zone = the direction in which the forward axis moved (angle in the "turn / nose" plane) beyond a minimum angle | Few parameters; four sectors suit four chords | Not a target per chord, so it does not fit the optimiser's `q_i` per chord; ignores roll entirely | Partial fit; would need research-team agreement |
-| S4. Forward-axis distance | Like S1, but the angle between the rotated forward axes (ignores tilt about the forward axis) | Matches what the 2-D cursor shows | Two poses differing only by tilt are the same target; a different separation metric than the protocol's quaternion geodesic | Open question for the research team (§9, P2) |
-
-### 3.3 Options for triggering (committing) a chord
-
-| Option | How it works | For | Against | Protocol |
-|---|---|---|---|---|
-| **T1. Dwell (proposed)** | Commit when the sample stays in the same zone for `T_dwell` of device time | Single mechanism, no extra movement; the protocol's choice | Adds `T_dwell` to selection time; Midas-touch risk from incidental holds, mitigated by the neutral gate | The protocol's state machine |
-| T2. Trigger gesture (nod or short return movement) | Select by zone, confirm with a quick gesture | Faster, fewer false activations from holds | Repeated nodding is ruled out by protocol §6; more movement; needs a gesture detector and its own thresholds | Future extension (§6); §12 item 2 leaves it open. **Not proposed** |
-| T3. Dwell + confirmation | Dwell arms; a small confirmation commits | Lowest false activation | Most complex; same objection as T2 | §12 item 2: "Do not change only one condition". Not proposed |
-| T4. Zone entry, no dwell | Commit on entering a zone | Fastest | Every passage through a zone commits | Contradicts the dwell state machine. Not proposed |
-
-### 3.4 Proposed state machine (S1 + T1)
-
-States follow the protocol; `unarmed` is added as the state after any reset (it is the protocol's `return-to-neutral` with nothing sounding committed in this attempt).
-
-| State | Meaning | Leaves to |
+| Input | Deterministic? | Handling |
 |---|---|---|
-| `inactive` | Instrument disabled, or gate not usable | `unarmed` when the gate becomes usable |
-| `unarmed` | After any reset: waiting for the head to be in the neutral zone | `neutral` when `θ(q_rel, 1) ≤ r_neutral` |
-| `neutral` | In the neutral zone; armed | `aiming` when `θ(q_rel, 1) > r_neutral_exit` |
-| `aiming` | Out of neutral, in no target zone | `dwell-armed` on entering zone *i*; `neutral` on re-entering the neutral zone |
-| `dwell-armed(i)` | In zone *i*; dwell timer running from the first in-zone sample `d_start` | `committed(i)` when `d − d_start ≥ T_dwell`; `aiming` when leaving the zone (`> r_exit`) |
-| `committed(i)` | Chord *i* committed: `raw_commit`, then chord-on (previous chord off) | `return-to-neutral` immediately |
-| `return-to-neutral` | Chord sounds; no new selection possible until the neutral zone is entered and `T_cooldown` has passed since the commit | `neutral` |
+| Processed samples, with the gate status evaluated at the sample's arrival time (`now = host_rx`) | yes | Recomputed identically on replay |
+| `device_connected` / `device_disconnected` | yes | Already recorded and replayed |
+| Commands: `capture_neutral`, `instrument_enable`, `instrument_disable`, `panic` | yes | Recorded in `commands.jsonl` with `after_seq` |
+| Neutral-capture results | yes | Regenerated by the processor on replay |
+| **Stale tick:** the gate becomes unusable *between* samples (pause, PC sleep) | live timing | Logged in `instrument_inputs.jsonl` at its position (after `seq` *s*, after *k* further items), and re-injected there on replay |
+| **Late processing:** the pipeline thread handles a sample more than `T_stale` after it arrived | live timing | Logged and re-applied the same way |
 
-Rules:
-- **Dwell time is device time** (`device_ts_raw` differences within one connection). It is deterministic, measures production rather than delivery, and the device clock restart on reconnect does not matter because a reconnect resets the state anyway.
-- **A commit needs an unbroken run** of samples, all with the gate usable, all in zone *i*, on the same `connection_id` and `neutral_calibration_id`, spanning `T_dwell`. This invariant is what the tests check (§6).
-- **Commit granularity is one sample period** (4.94 ms at 240 Hz requested, 16.8 ms at 60 Hz; G0). The default remains 240 Hz requested.
-- **Same chord again:** after a return to neutral, committing the chord that is already sounding re-triggers it (chord-off, chord-on). Prompted selection may need a commit even for a repeated chord. Open point P5 (§9).
-- **Chord-off** happens on the next commit, on `all_notes_off`, on stop, and (proposed default) on any interruption (§4.3, P1).
+The FSM reads no clock: dwell and cooldown are measured in device time within one connection. **Replaying a recorded session reproduces `interaction_events.jsonl` byte for byte** (protocol gate G1).
 
-### 3.5 Provisional engineering defaults
+---
 
-Each value goes into `defaults.toml` under `[instrument]`, is copied into `session.json`, and is labelled there as a provisional engineering default.
+## 3. Chord selection: yaw regions and the state machine
+
+### 3.1 The region coordinate (from quaternions, documented)
+
+- `f = rotate(q_rel, (1, 0, 0))`: the glasses' forward axis expressed in the neutral head frame.
+- **`yaw_rel = atan2(f_y, f_x)`**: the heading of the forward axis in the neutral frame's horizontal plane. +yaw = turn left, as in conventions.md.
+- `elev = asin(f_z)`: how far the forward axis points above (+, nose up) or below (−, nose down) that plane.
+- **This is exactly the display yaw of the Z-Y′-X″ convention** (same formula), so the HUD shows the value that is used. It is computed by rotating a vector with the quaternion, and it is independent of tilt. Pitch and roll are not used.
+- **Eligibility:** a sample counts for regions and the neutral only if `|elev| ≤ max_elevation_deg`. The default 89° is a numeric guard against an undefined heading, not a limit on movement. Whether a tighter value is wanted is a research question.
+
+### 3.2 Regions
+
+- Each chord has a yaw interval `[yaw_min, yaw_max]`. The neutral zone is `|yaw_rel| ≤ neutral_yaw_deg`.
+- **Hysteresis `h`:** a sample *enters* a region inside `[yaw_min, yaw_max]` and *stays* while inside `[yaw_min − h, yaw_max + h]`. The neutral zone likewise enters at `neutral_yaw_deg` and leaves beyond `neutral_yaw_deg + h`.
+- **Validation:** regions may not overlap. Neighbouring regions must be more than `h` apart, so a region is always left before the next is entered. Every region must begin beyond the neutral exit (`neutral_yaw_deg + h`). Each chord appears once.
+- Yaw-only regions are a Phase 2 simplification of the protocol's per-chord target orientations `q_i` (protocol §6). See the research questions.
+
+### 3.3 State machine (`GestureFSM`)
+
+| State | Meaning | Transitions |
+|---|---|---|
+| `inactive` | Disabled, after `panic`, or the gate is not usable (reason shown) | → `unarmed` on the first usable, fresh sample (when enabled) |
+| `unarmed` | After any reset: waiting for the neutral zone | → `neutral` after `rearm_hold_ms` inside the neutral zone |
+| `neutral` | Idle and armed. Resting here never plays anything | → `aiming` on leaving the neutral zone |
+| `aiming` | Out of neutral, in no region, or in a region while the cooldown runs | → `dwell_armed(i)` on entering region *i* (cooldown over) · → `neutral` on re-entering it |
+| `dwell_armed(i)` | In region *i*; progress = elapsed device time / `dwell_ms` | → `return_to_neutral` (commit) when elapsed ≥ `dwell_ms` · → `aiming` on leaving the region (dwell cancelled) |
+| `return_to_neutral` | Chord *i* committed. No new selection until the neutral zone is re-entered | → `neutral` (after `rearm_hold_ms` in the zone) |
+
+The protocol's `committed` state is the instant of the commit. It is logged as the `dwell_complete` and `raw_commit` events on that sample.
+
+**Repeat and switching rules:**
+- **No repeated activation from one pose:** after a commit, staying in, or returning to, any region does nothing until the neutral zone is entered.
+- **Target switching:** moving from region A to region B while dwelling cancels A, so B's dwell starts from zero.
+- **Rapid movement:** passing through a region faster than `dwell_ms` commits nothing.
+- **Cooldown:** no dwell starts within `cooldown_ms` of the last commit, even after a fast return to neutral.
+- **Same chord again:** after returning to neutral, the sounding chord can be committed again (`allow_same_chord_recommit`). The chord engine re-triggers it.
+
+### 3.4 Provisional defaults (`[instrument]` in `defaults.toml`)
 
 | Parameter | Default | Basis |
 |---|---|---|
-| `targets` | C: turn left 20°; G: turn right 20°; Am: nose up 15°; F: nose down 15°. All other components 0. Stored as quaternions built once from the display convention (conventions.md), with the definition kept in the config | **Chosen only so that targets are clearly separated for bench testing by hand or on a turntable fixture.** Not an ergonomic layout; the protocol's layout comes from Model A/B/C (§8) |
-| `r_enter_deg` / `r_exit_deg` | 7° / 9° | Engineering: smallest separation in the default layout is ≈ 25° (between a turn and a nose target), so `2·r_exit` = 18° leaves margin. Config validation rejects any layout with separation ≤ `2·r_exit` |
-| `r_neutral_deg` / `r_neutral_exit_deg` | 4° / 5° | Engineering; must be well below the target distance |
-| `dwell_ms` | 500 | Middle of the protocol's 400–600 ms candidate range, which the protocol says must be piloted and frozen first |
-| `cooldown_ms` | 300 | Placeholder; the protocol names a cooldown but no value |
-| `release_on_interruption` | `true` | See §4.3 and P1 |
-| `reset_on_gap_before` | `true` | See §4.2 and P3 |
-
-Sensor noise does not drive these values. The G0 fixture jitter is about 0.0008° RMS, four orders of magnitude below any radius here, so hysteresis is for **movement near a boundary**, not for noise. Worn behaviour is uncharacterised (O3).
-
-### 3.6 HUD (minimal)
-
-- A panel in the existing tkinter viewer: neutral marker, four target circles with chord names, a cursor, dwell progress, the current chord, and the gate status with its reason.
-- **Cursor:** where the forward axis of `q_rel` points, projected onto the panel (display only). Tilt (roll) is shown as a separate small indicator, because S1 counts it (§3.2).
-- **Head-locked display:** the VITURE Pro is itself a display, so showing the viewer on the glasses gives a head-locked HUD without any 3-D rendering. Doing that means wearing them: **blocked by O3**. On the bench the panel is shown on the PC screen.
-- The HUD reads the recogniser's state snapshot; it never decides anything.
+| Regions (+ = left) | C `[+22, +40]`, G `[+8, +18]`, Am `[−18, −8]`, F `[−40, −22]` (degrees `yaw_rel`) | **Bench layout only**: clear separation for testing by hand or on a fixture. Not an ergonomic layout |
+| `neutral_yaw_deg` | 4.0 | Engineering; below the nearest region |
+| `hysteresis_deg` | 1.5 | Engineering. G0 fixture jitter (≈ 0.0008° RMS) is far below it, so it addresses movement near a boundary, not sensor noise. Worn behaviour is unmeasured (O3) |
+| `dwell_ms` | 500 | Middle of the protocol's 400–600 ms candidate range, which the protocol says must be piloted and frozen |
+| `cooldown_ms` | 300 | Placeholder; the protocol names a cooldown but gives no value |
+| `rearm_hold_ms` | 0 | Entering the neutral zone re-arms. Any hold is a research choice |
+| `max_elevation_deg` | 89.0 | Numeric guard (§3.1) |
+| `reset_on_gap_before` | true | §4.1 |
+| `allow_same_chord_recommit` | true | §3.3 |
+| `start_enabled` | true | — |
 
 ---
 
@@ -161,175 +148,150 @@ Sensor noise does not drive these values. The G0 fixture jitter is about 0.0008�
 
 ### 4.1 Reset rule
 
-**Reset** = cancel any dwell, discard the zone, go to `inactive` (gate unusable) or `unarmed` (gate usable), and emit a `gesture_reset` event with its reason. After a reset, a commit needs a return to the neutral zone first, so a head already resting in a target zone after a pause, a reconnect or a new neutral cannot commit.
+A **reset** cancels any dwell and forgets the region. It moves to `inactive` (gate unusable or disabled) or `unarmed` (usable), and it logs `gesture_reset` with its reason. The next commit then needs a deliberate return to neutral. So a head that rests in a region through a pause, a reconnect or a recenter cannot commit when tracking returns.
 
-| Trigger | Detected by | Reason code |
-|---|---|---|
-| Gate not usable on a sample (`disconnected`, `no_valid_sample`, `last_sample_invalid`, `stale`, `no_neutral`) | `gs.usable` with `now = host_rx` | the gate's reasons |
-| Gate becomes unusable between samples (pause, sleep) | `on_tick` (live), replayed input | `stale_tick` |
-| `device_disconnected` / `device_connected` | event | `disconnect` / `new_connection` |
-| `connection_id` differs from the dwell's | sample | `new_connection` |
-| `neutral_calibration_id` differs from the dwell's (new neutral = new reference frame) | sample | `new_neutral` |
-| `capture_neutral` requested (the instrument stays `inactive` until the capture is accepted or rejected) | command | `neutral_capture` |
-| `gap_before` on a sample, even if below `T_stale` | sample flag | `gap` |
-| Late processing in the pipeline thread | live guard, replayed input | `late_processing` |
-| `instrument_disable`, stop, end of replay | command / shutdown | `disabled` / `stop` |
+| Trigger | Reason |
+|---|---|
+| Gate unusable on a sample at its arrival time: `disconnected`, `no_valid_sample`, `last_sample_invalid`, `stale`, `no_neutral` | the gate's reasons |
+| Gate unusable between samples (logged live input) | `stale_tick` |
+| Disconnect or connect event; a sample from another `connection_id` | `disconnect`, `new_connection` |
+| `neutral_calibration_id` changed (new reference frame) | `new_neutral` |
+| `capture_neutral` requested: stays `inactive` until the capture is accepted or rejected | `neutral_capture` |
+| `gap_before` on a sample, even below `T_stale` | `gap` |
+| Late processing (logged live input) | `late_processing` |
+| `instrument_disable`, `panic`, end of stream | `disabled`, `panic`, `stop` |
 
-**No musical command fires on invalid or stale tracking.** "Command" here means a selection: `dwell_start`, `raw_commit` and chord-on. A **release** (chord-off, all-notes-off) is always allowed, because it stops sound rather than selecting it. That reading of D2 is P1 in §9.
+**Old queued data cannot trigger anything after an interruption.** Every reset sets a *freshness watermark* on the host timebase. Samples whose estimated production time (the gate's `device_ts + o_min`) is not later than the watermark cannot arm or advance the FSM. With the gate's data-age check, this covers samples that were already queued, delivered late after a PC sleep (G0 R9), or processed late.
 
-### 4.2 G0 findings and how the design handles each
+A reconnect always needs a new neutral: the processor already gives a new connection no neutral, so the gate reports `no_neutral`, which keeps the FSM `inactive` until a capture on the new connection is accepted.
 
-| G0 finding | Consequence | Design response |
-|---|---|---|
-| **Device pauses of ≈ 300 or 600 ms** (cause unknown; R6a, R6c, R9) | The device produces nothing; the gate goes stale after 100 ms | Live: the idle tick (≤ 20 ms granularity) sees `stale` → reset and (default) chord-off within about `T_stale` + 20 ms of the last production. On the next sample, `gap_before` resets again, so the decision on the sample stream does not depend on tick timing. A dwell can never complete across a pause |
-| **Short gap ≈ 50 ms 2–3 s after each (re)connect** (R7, R8) | Below `T_stale`, so the gate stays usable | `reset_on_gap_before = true` resets anyway. Cost is low: a new connection needs a new neutral first, and untouched fixture runs had 0 gaps in 35 min. Whether sub-stale gaps should reset is P3 |
-| **Cable movement can disconnect** (11 s outage, power cycle; R8) | `device_disconnected`, then a new connection with no neutral | Reset, chord-off, `inactive` until a new neutral is accepted on the new connection. The instrument shows "re-capture neutral". What a *scored block* does is O5 |
-| **Device clock restarts per connection** (R7) | Device times of different connections are not comparable | Dwell uses device time only within one connection; every interaction event also carries the host-timebase production time (`device_ts + o_min`, as the gate estimates it), which is comparable across connections |
-| **Late samples after a PC sleep** (29.9 s late, then a burst up to 316 ms late; R9) | Old data arrives as if new | The per-sample gate check uses data age, so these samples are `stale` and reset the state; no dwell can start until arrivals are < 100 ms late. `headmusic play` also asks Windows not to sleep while it runs (`SetThreadExecutionState`, a per-process request, not a settings change) |
-| **Duplicate timestamps** (0.01–0.05 %, invalidating) | `last_sample_invalid` for one sample | Resets the dwell. Expected cost, from G0 fixture rates, assuming independence: a 500 ms dwell is interrupted with probability ≈ 5 % at 240 Hz (61 in 600 s), ≈ 1.3 % at 120 Hz, ≈ 0.5 % at 90 Hz and ≈ 0.8 % at 60 Hz. The user sees the dwell restart. This is the "duplicate timestamps" decision (§9) |
-| **Strong SDK smoothing, unknown filter latency** (TV4) | `q_rel` lags the head by an unknown amount; overshoot settles slowly | The lag adds to selection time and to the latency budget (§5.2) and cannot be measured with the glasses alone. Hysteresis tolerates slow settling near a boundary. No compensation (prediction) is proposed: it would change what the user sees and is a methodology choice |
-| **Achieved rates 59.4 / 84.6 / 112.3 / 202.5 Hz** (TV10) | Fewer samples per dwell than nominal | Dwell is measured in time, never in sample counts. At 202.5 Hz a 500 ms dwell spans ≈ 101 samples; at 59.4 Hz ≈ 30. Default stays 240 Hz requested |
-| **Late processing** (TV6: Python-side latency unmeasured) | A sample may be acted on long after it arrived | Live guard: if `now − host_rx > T_stale` when the pipeline handles a sample, the instrument treats it as stale and logs a `late_processing` input, which replay re-applies. The pipeline's maximum queue depth is already logged |
+### 4.2 G0 findings and the design response
 
-### 4.3 What happens to a sounding chord on an interruption
+| Finding (fixture, not worn) | Response |
+|---|---|
+| Device pauses of ≈ 300/600 ms | Live: a stale tick resets the FSM and releases sound within ≈ `T_stale` + 20 ms of the last production. The next sample carries `gap_before` and resets again |
+| ≈ 50 ms gap after (re)connecting | Reset by `reset_on_gap_before`; the new connection has no neutral anyway |
+| Cable movement → disconnect, power cycle | Reset, release, `inactive` until a new neutral is accepted (O5 for blocks) |
+| Device clock restarts per connection | Dwell compares device times only within one connection; logged times also carry the host-timebase production estimate |
+| Late samples after a PC sleep | Stale by data age; freshness watermark; the app asks Windows not to sleep while it runs (per process, released on exit) |
+| Duplicate timestamps (invalidating) | A dwell is interrupted: ≈ 5 % of 500 ms dwells at 240 Hz requested, 0.5–1.3 % at 60–120 Hz (fixture rates, assumed independent). Kept strict pending the research decision |
+| Strong SDK smoothing, unknown filter lag | Adds unmeasured lag before the dwell starts and to the latency budget. No prediction is applied (a methodology choice) |
+| Achieved rates 59.4 / 84.6 / 112.3 / 202.5 Hz | Dwell is in time, never in sample counts. Commit granularity is one sample period (4.9 ms at 240 Hz requested); 240 Hz stays the default |
 
-- **Proposed default: release.** An interruption sends chord-off, so sound never continues on tracking the system no longer trusts, and the silence makes the loss audible.
-- **Alternative: hold.** The chord keeps sounding until the next valid commit or stop, so a 300 ms pause does not cut the music.
-- Either way, no new chord can start until tracking is usable and the head has returned to neutral. The choice affects what a participant hears during the G0 pauses, so it is the research team's (P1, together with O5).
-- **On every stop path** (normal stop, Ctrl-C, exception, end of replay, output backend error), all-notes-off is sent and logged. This is protocol §11's "MIDI note-off on termination" test.
+**Worn latency and jitter are unknown.** Nothing here assumes the fixture values hold when the glasses are worn.
 
 ---
 
-## 5. Audio and MIDI output
+## 5. Music engine (2B)
 
-### 5.1 Options (minimal dependencies first)
+### 5.1 Chords and MIDI
 
-| Option | Dependencies | Latency | For | Against |
-|---|---|---|---|---|
-| **O-A. Windows MIDI out (`winmm.midiOutShortMsg`) via `ctypes` (proposed baseline)** | None (Windows built-in) | The call itself is short (to be measured); the sound latency depends on the receiving synth | No new dependency; deterministic MIDI messages; the user can route to any synth | The built-in "Microsoft GS Wavetable Synth" is known for noticeable latency (not measured here); a low-latency synth needs a user-installed loopback port and synth |
-| O-B. `mido` + `python-rtmidi` | Two packages, one compiled | Like O-A | Portable; virtual ports on some platforms | Adds dependencies for no capability needed now |
-| O-C. Built-in synthesis, numpy + `sounddevice` (PortAudio, WASAPI) | One package with a bundled DLL | Buffer-dependent; can be low with WASAPI | Self-contained sound; the audio scheduling time is known to us | A dependency; buffer tuning; an audio callback thread to keep real-time |
-| O-D. Built-in synthesis via `winmm.waveOut` and `ctypes` | None | Typically higher than WASAPI | No dependency | Buffer handling by hand; latency likely worse than O-C |
-| **O-N. Null / log backend (always present)** | None | — | Tests, replay, headless runs: events only | No sound |
+- MIDI channel 1, velocity 100 (configurable). Voicings: C = C4 E4 G4, G = G3 B3 D4, Am = A3 C4 E4, F = F3 A3 C4.
+- A commit sends note-off for the sounding chord, then note-on for the new one. The engine keeps the set of sounding notes, so every note-on has exactly one note-off.
 
-**Proposal:** O-A plus O-N in Phase 2. Fixed MIDI mapping (channel 1, velocity 100; C = C4-E4-G4, G = G3-B3-D4, Am = A3-C4-E4, F = F3-A3-C4; configurable). O-C can follow if built-in sound is wanted (P6). An optional metronome click on MIDI channel 10 at a fixed tempo supports bench trials of rhythmic play; quantization is off by default and, when on, never replaces the raw commit time.
+### 5.2 Accompaniment (optional, off by default)
 
-### 5.2 Latency budget (from head movement to sound)
+- A fixed-tempo click on MIDI channel 10 (default 80 BPM, the protocol's *candidate*), optionally with beat quantization of chord onsets.
+- With quantization on, the raw commit time is still logged, and the scheduled onset is logged separately.
 
-The dwell is intentional and excluded; the budget runs from the sample that completes the dwell to sound.
+### 5.3 Interruptions and emergency stop
 
-| Stage | Known | Status |
+| Situation | Chord | Accompaniment |
 |---|---|---|
-| Sensor and SDK fusion filter | Strong smoothing (G0) | **Unknown.** Not measurable with the glasses alone (TV4) |
-| Device → host arrival | Relative lateness p99 ≈ 2.2 ms, arrival residual SD ≈ 0.44 ms (relative, not absolute) | Absolute part unknown (TV6) |
-| Device timestamp resolution | 1 ms | Measured |
-| Shim ring drain | ≤ `drain_interval_ms` = 5 ms | Configured |
-| Queue, processing, recogniser | Not measured (TV6) | Phase 2 logs `decision_host_ns − host_rx` per commit and reports its distribution |
-| MIDI call | Not measured | Phase 2 logs host time before and after each send |
-| Synth and audio device | Unknown; backend-dependent | Needs an external measurement (for example a microphone loopback). **Not in Phase 2** without O4 |
-| Commit granularity | ≤ one sample period: 4.94 ms (240 Hz req.), 16.8 ms (60 Hz req.) | Measured rates |
+| Interruption (any reset, §4.1) | **Released** (note-off), default `release_on_interruption = true` | **Continues** by default (`accompaniment.on_interruption = "continue"`; `"mute"` available). It is a time reference, not a head-controlled command |
+| `panic` (key, button, CLI) | All notes off, plus MIDI CC 123 "all notes off" on every used channel | Stopped |
+| Normal stop, Ctrl-C, exception, end of replay, backend error | All notes off | Stopped |
 
-Whether this is good enough is **O4**: the protocol sets no timing precision target. Phase 2 measures and reports the software stages; it makes no adequacy claim. Following protocol §10, the MIDI send time is never reported as acoustic onset.
+Releasing is always allowed: it stops sound and selects nothing. Release versus hold during short pauses, and the accompaniment behaviour, are research questions. The defaults above are engineering choices.
 
-### 5.3 Recording for deterministic replay
+---
 
-New files in the session directory (additive; schema 1.2.0; existing files unchanged):
+## 6. Logging and timing
+
+### 6.1 Files (schema 1.2.0, additive)
 
 | File | Content |
 |---|---|
-| `interaction_events.jsonl` | **Deterministic** recogniser outputs, one per line: `event_type` (protocol §10.3 names: `aim_enter`, `dwell_start`, `dwell_complete`, `raw_commit`, `midi_note_on`, `midi_note_off`, `return_neutral`, plus `gesture_reset`, `instrument_state`), `seq` (the deciding sample), `connection_id`, `neutral_calibration_id`, `device_ts_raw`, `host_rx_monotonic_ns`, `event_host_monotonic_ns` (= estimated production time of the deciding sample, host timebase), `chord_observed`, `selected_target_id`, `recognizer_state`, `reset_reason`, `mapping_version`, `quantization_enabled`; the protocol's `chord_expected`, `model_id` and `optimizer_seed` stay `null` (no cues, no models in Phase 2) |
-| `instrument_inputs.jsonl` | The live-only inputs of §2.3 (`stale_tick`, `late_processing`), each with `after_seq` and host time. Replay re-injects them at those positions, like `commands.jsonl` |
-| `output_log.jsonl` | **Non-deterministic** output facts: backend, MIDI bytes, host time before and after each send, decision time (`decision_host_ns`), errors. Joined to `interaction_events` by an event id. Never compared on replay |
-| `session.json` | Gains an `instrument` section: config snapshot, target table (quaternions and their display definitions), backend and port, `mapping_version` (hash of the target table and parameters) |
+| `interaction_events.jsonl` | **Deterministic** FSM and engine decisions: `event_id`, `event_type`, `seq`, `connection_id`, `neutral_calibration_id`, `device_ts_raw`, `host_rx_monotonic_ns`, `produced_host_ns`, `state`, `chord`, `region`, `reason`, `dwell_elapsed_ms`, `mapping_version` |
+| `instrument_inputs.jsonl` | Live-only inputs (§2) with their positions |
+| `interaction_timing.jsonl` | **Non-deterministic:** processing time of each decision, MIDI send times before and after each call, backend errors. Joined by `event_id` and never compared on replay |
+| `session.json` | `instrument` (and in 2B `music`) section: the full parameter snapshot, regions, `mapping_version` (a hash), backend and port |
 
-Replay: `replay <session> --instrument --reprocess` recomputes `interaction_events.jsonl` from `raw_pose.csv`, `events.jsonl`, `commands.jsonl` and `instrument_inputs.jsonl` with the session's own config, and must reproduce it byte for byte on the same platform and versions (protocol gate G1). Replay with an audio backend replays the recorded events through it, for listening; it never alters the recorded files.
+### 6.2 Timestamps per chord selection
 
----
-
-## 6. Testing (no glasses needed)
-
-All new tests run with `glasses.dll` absent and the null backend, like the Phase 1 suite.
-
-**Synthetic traces** (an extension of `acquisition/synthetic.py`: scripted head motion as piecewise holds and slerp movements between `q_rel` poses, on a real `r_ref` rate and 1 ms timestamp quantisation):
-- Happy path: neutral → each target → hold `T_dwell` → return, for all four chords; exactly one commit each, at the first sample with elapsed ≥ `T_dwell`.
-- Boundaries: hold for `T_dwell − 1 sample period` (no commit); oscillation across `r_enter`/`r_exit` (hysteresis: one dwell); pass through a zone faster than `T_dwell` (no commit); move target A → target B without neutral (dwell on B only; no second commit without neutral after a commit); cooldown.
-- **Every reset trigger of §4.1, injected in every state** (`neutral`, `aiming`, `dwell-armed` at its start, middle and one sample before completion, `return-to-neutral` with a chord sounding): duplicate timestamp, `ts_backward`, NaN, zero norm, `angular_jump`, 300 ms and 600 ms pauses (G0 pattern, including the 600 + 300 ms pair), a 50 ms gap, disconnect → reconnect with the device clock restarted, a new neutral, a capture request, the R9 sleep pattern (one 29.9 s late sample, then a late burst), no neutral at start.
-  Each must: reset, emit `gesture_reset` with the right reason, commit nothing, release a sounding chord (when `release_on_interruption`), and require a return to neutral before the next commit, including when the head rests in a target zone throughout the interruption.
-- Quaternion edge cases at a target: SDK sign flip (`hemisphere_flip`) while dwelling; yaw near ±180° relative to the tracking frame (irrelevant to `q_rel`, still tested).
-- **Invariant check on every test trace:** each `raw_commit` is preceded by an unbroken, gate-usable, in-zone run of ≥ `T_dwell` on one connection and one neutral, which started after a neutral-zone visit. Run also on randomised fault traces (seeded).
-- Midas-touch characterisation: a seeded slow random-wander trace counts unintended commits. This is a software regression measure, not an estimate of human behaviour.
-
-**Determinism and replay:**
-- Live simulation (threaded pipeline, fake clock, ticks during injected pauses) versus offline replay of the recorded session: `interaction_events.jsonl` byte-identical.
-- The G0 sessions (R6a movements, R7 unplug, R8 cable disconnect, R9 sleep) replayed through the instrument as local smoke tests. They are git-ignored data, so they are not in CI; small excerpts could become fixtures only with your approval.
-- With no consumers, Phase 1 replay output stays byte-identical (existing tests).
-
-**Output:**
-- A fake `winmm` records messages; chord-on/off pairing; all-notes-off on each stop path, including an exception inside the recogniser and a backend error.
-- Config validation: target separation ≤ `2·r_exit`, `r_exit ≤ r_enter`, a target closer to neutral than `r_neutral_exit + r_exit` (the default layout has 15° > 14°), unknown chord names: all rejected with a clear message.
-- The import-graph test extended to the rules in §2.2.
-
----
-
-## 7. Implementation plan (after approval)
-
-| Step | Deliverable | Verified by |
+| Moment | `event_type` | Timestamp(s) |
 |---|---|---|
-| 1 | `Pipeline` consumer hook (additive) | Phase 1 tests unchanged and byte-identical |
-| 2 | `instrument/mapping.py` (targets, geodesic zones, config validation) and `instrument/recognizer.py` (pure state machine) | Unit tests §6 |
-| 3 | Synthetic motion scripts and fault injection; invariant checker | Fault matrix §6 |
-| 4 | Interaction recording (three files, schema 1.2.0), `replay --instrument`, input logging for ticks and late processing | Live-simulation vs replay byte identity |
-| 5 | Output: null backend, `winmm` MIDI backend, all-notes-off on every stop path, optional metronome | Fake-`winmm` tests; one bench check you approve (MIDI to the built-in synth, glasses on the table, not worn) |
-| 6 | HUD panel in the viewer, `headmusic play` | Manual check from replay, then live on the bench (approved run, glasses handled or on a fixture, not worn) |
-| 7 | Docs: `docs/instrument.md` (state machine, parameters), data-format 1.2.0, threats-to-validity entries | Review with you |
+| Target entry | `aim_enter` | deciding sample: `device_ts_raw`, `host_rx`, `produced_host_ns` |
+| Dwell initiation | `dwell_start` | same fields (it may be later than entry, because of the cooldown) |
+| Gesture recognition | `dwell_complete` | same fields, plus `decision_host_ns` (processing time, timing log) |
+| Chord commitment | `raw_commit` | same sample; the protocol's unquantized commit |
+| MIDI dispatch | `midi_note_on` / `midi_note_off` (2B) | `send_begin_host_ns`, `send_end_host_ns` (timing log) |
+| Quantized onset | `scheduled_onset` (2B, only when quantizing) | scheduled host time |
+| Audio output | — | **Not measured** by the software. A *measured* physical latency needs an external method (2D, O4). Reports always label software-side values `estimated` |
 
-Any step that opens the glasses needs your approval of its setup first, as in G0.
-
----
-
-## 8. Out of scope
-
-- Comfort, effort or discomfort models (Models B and C), the optimiser, Model A's "pre-piloted" layout.
-- Participant calibration, rating UI, candidate-pose sampling.
-- Formal experiments: cues, prompted-selection blocks, scored blocks, counterbalancing, false-activation statistics, any participant data (IRB gate).
-- ML of any kind.
-- Trigger gestures, roll modulation, continuous control (protocol §6 future extensions).
-- Torso tracking, world-anchored UI, gaze.
-- Absolute audio-onset measurement (needs O4 and an external method).
-
-The `interaction_events` schema leaves room for cues and models (null fields), so a later experiment phase does not need a schema break.
+Software-estimated latency is `send_end − produced_host_ns`. It excludes the SDK filter lag, the synth and the audio device.
 
 ---
 
-## 9. Open decisions and blockers
+## 7. Milestones and acceptance criteria
 
-### Existing open items
+### 2A — Gesture selection and state machine (no audio)
 
-| # | Item | Effect on Phase 2 |
+| # | Criterion | Test |
 |---|---|---|
-| **O3** | Developer self-testing while wearing the glasses: is it outside the human-subjects gate? | **Blocks trying the instrument on the head** and showing the HUD in the glasses. Steps 1–5 and bench checks of 6 do not depend on it |
-| **O4** | Timing precision target | Phase 2 measures the software stages (§5.2) and makes no adequacy claim. Needed before choosing between output options on latency grounds, and before any audio-onset measurement |
-| **O5** | Disconnects (and pauses) during a block | The instrument resets, releases (default) and waits for a new neutral. What a *block* does (abort, pause, re-capture, mark trials) is an experiment-procedure decision |
-| **O6** | `tau_stab_deg` (placeholder 2.0°) | Decides how readily a re-capture after a reconnect is accepted, so how long the instrument stays `inactive` |
-| **Duplicate timestamps** | Keep them invalidating? | With the strict gate, a 500 ms dwell restarts in ≈ 5 % of attempts at 240 Hz (≈ 0.5–1.3 % at 60–120 Hz), from fixture rates. Options: keep (safe, visible restarts); treat a `ts_duplicate` sample as "skip without reset" in the recogniser only; or reclassify the flag. The gate is not changed without your decision |
-| **O1** | Research report missing | This proposal must be re-checked against it, especially §3 (mapping) and §5 (timing) |
+| 2A-1 | The FSM implements §3.3 exactly; regions and neutral use the §3.1 coordinate with hysteresis | Unit tests per transition; coordinate equals display yaw on a grid |
+| 2A-2 | **Every reset trigger of §4.1, injected in every state** (including one sample before a dwell completes), commits nothing, logs the reason, and requires a return to neutral, even if the head stays in a region | Synthetic fault matrix |
+| 2A-3 | Repeated dwell, target switching, passing through and cooldown behave as in §3.3 | Synthetic motion scripts |
+| 2A-4 | Invariant on every test trace and on seeded random fault traces: each commit follows an unbroken, gate-usable, fresh, in-region run of ≥ `dwell_ms` on one connection and one neutral, which started after a neutral visit | Invariant checker |
+| 2A-5 | Live-simulated run (with stale ticks and late processing) and offline replay give byte-identical `interaction_events.jsonl`; Phase 1 outputs unchanged without consumers | Replay tests |
+| 2A-6 | Invalid configs are rejected with a clear message; the full parameter set is in `session.json` | Config tests |
+| 2A-7 | The import-graph rules of §1 hold | Architecture test |
+| 2A-8 | `synth chords` and `replay <session> --reprocess --instrument` produce sessions with interaction logs | CLI tests |
 
-### New decisions raised by this proposal
+### 2B — Music/MIDI engine
 
-| # | Decision | Proposed default |
+| # | Criterion | Test |
 |---|---|---|
-| **P1** | On an interruption, release the sounding chord or hold it? And is a release allowed on untrusted tracking (it stops sound; it selects nothing)? | Release; releases always allowed |
-| **P2** | Zone distance: full geodesic angle including tilt (S1) or forward-axis angle ignoring tilt (S4)? | S1, the protocol's geodesic |
-| **P3** | Reset on sub-stale gaps (`gap_before`), or only when the gate becomes unusable? | Reset on any gap |
-| **P4** | The provisional values in §3.5: dwell (protocol range 400–600 ms; 500 proposed), radii, cooldown, the bench layout | As in §3.5, explicitly placeholders until the research team sets them |
-| **P5** | Re-committing the chord already sounding: re-trigger or ignore? | Re-trigger |
-| **P6** | Output backend: `winmm` MIDI only, or also built-in synthesis (`sounddevice`, one dependency)? | `winmm` MIDI + null now; synthesis later if wanted |
-| **P7** | Request "no sleep" from Windows while the instrument runs? | Yes, per process, released on exit |
+| 2B-1 | Correct chord voicings; every note-on paired with one note-off; re-trigger of the same chord | Fake backend |
+| 2B-2 | Release on interruption and accompaniment behaviour as in §5.3; `panic` silences everything | Fake backend with the 2A fault matrix |
+| 2B-3 | All notes off on every stop path (normal, Ctrl-C, exception in FSM or engine, backend error) | Fault injection |
+| 2B-4 | Timing log carries send times; optional quantization logs raw and scheduled times separately | Unit tests |
+| 2B-5 | Audible output through the default Windows MIDI synth from a **replayed** session (no glasses) | Manual check you approve |
 
-### Points where the protocol is silent or could conflict
+### 2C — Integrated visual application
 
-- **Chord-off:** the protocol names chord-on/chord-off events but not when a chord ends. This proposal: on the next commit, on release triggers, on stop.
-- **Single timestamp per event:** protocol §10.3 has one `event_host_monotonic_ns`. This proposal stores the deciding sample's arrival time, its estimated production time and (non-deterministically) the decision and send times, so the timing rule of §10 ("preserve … separately") can be met. Which one the analysis calls "raw commit time" is the research team's choice; the default `event_host_monotonic_ns` is the production estimate.
-- **Euler boxes** (option S2) would conflict with the protocol's quaternion-only computation. Not proposed.
-- **Recenter:** the protocol allows it only between tasks. Phase 2 has no tasks; the instrument simply suspends during a capture and resets after.
-- **HUD in the glasses** is worn use, so it falls under O3, not just an engineering choice.
+| # | Criterion | Test |
+|---|---|---|
+| 2C-1 | `headmusic play` (live) and `replay --instrument --view`: HUD with regions, `yaw_rel` cursor, neutral zone, dwell progress, selected and sounding chord, gate status and reason, FSM state | Text/state tests for the HUD model; manual check from replay |
+| 2C-2 | Emergency-stop key and button; enable/disable; neutral capture and retry as in the viewer | Command tests |
+| 2C-3 | The HUD never decides anything; it reads snapshots only | Architecture test |
+
+### 2D — Hardware and usability smoke tests
+
+| # | Criterion | Condition |
+|---|---|---|
+| 2D-1 | Live bench run with the glasses on the table or handled by hand (not worn): turns select chords, pauses and an unplug reset safely, sound stops | Each run's setup approved by you first, as in G0 |
+| 2D-2 | Software-side timing report (estimated latency distribution) | Same |
+| 2D-3 | A physical audio-output latency measurement | Needs a method and a target (O4) |
+| 2D-4 | Worn smoke tests and any usability impression | **Only after faculty/IRB guidance (O3).** No participants |
+
+---
+
+## 8. Out of scope (Phase 2)
+
+Comfort, effort or discomfort models (B, C), the optimiser and the Model A layout; participant calibration and ratings; formal experiments (cues, scored blocks, counterbalancing, statistics); ML; trigger gestures, roll modulation, continuous control; torso tracking; world-anchored UI.
+
+---
+
+## 9. Open items
+
+The methodological questions, with the engineering defaults used meanwhile, are in [research/phase2-open-questions.md](research/phase2-open-questions.md). Blocking or affecting Phase 2:
+
+| # | Item | Effect |
+|---|---|---|
+| **O3** | Developer self-testing while worn | Blocks 2D-4 and showing the HUD in the glasses |
+| **O4** | Timing precision target | Decides whether the built-in synth is adequate, and the 2D-3 method |
+| **O5** | Disconnects during a block | Instrument behaviour is defined (§4); block behaviour is not |
+| **O6** | `tau_stab_deg` | How easily a neutral is re-captured after a reconnect |
+| Duplicate timestamps | Stay invalidating? | ≈ 5 % of dwells interrupted at 240 Hz requested (§4.2) |
+| **O1** | Research report missing | Re-check §3 and §5 when it arrives |
