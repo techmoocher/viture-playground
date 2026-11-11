@@ -104,6 +104,6 @@ Each reset raises a freshness watermark. Samples produced (by the gate's estimat
 
 The chord engine is in [music.md](music.md) (2B).
 
-## Not yet (2C–2D)
+## Play window
 
-The HUD, `headmusic play` (live), and hardware runs.
+`headmusic play` and the HUD are described in [play.md](play.md) (2C). Hardware runs are 2D.

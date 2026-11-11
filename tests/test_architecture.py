@@ -53,9 +53,22 @@ def test_music_never_sees_sensors_or_ui(path):
     assert not bad, f"{path.name} imports {bad}"
 
 
+@pytest.mark.parametrize("name", ["hud.py", "play.py"])
+def test_play_display_decides_nothing(name):
+    """2C-3: the HUD reads snapshots and sends commands; it never imports the FSM, engine or pipeline logic."""
+    bad = {m for m in imports_of(SRC / "viewer" / name)
+           if m.startswith(("headmusic.instrument.fsm", "headmusic.instrument.consumer", "headmusic.music",
+                            "headmusic.pipeline", "headmusic.acquisition", "ctypes"))}
+    assert not bad, f"{name} imports {bad}"
+
+
 def test_only_hardware_boundaries_use_ctypes():
     users = {str(p.relative_to(SRC).as_posix()) for p in SRC.rglob("*.py") if "ctypes" in imports_of(p)}
     assert {u for u in users if not u.startswith("acquisition/")} <= {"music/backends/winmm.py"}
+    assert {u for u in users if u.startswith("acquisition/")} <= {"acquisition/capture_shim.py",
+                                                                  "acquisition/viture_sdk.py",
+                                                                  "acquisition/usb_enum.py",
+                                                                  "acquisition/power.py"}
 
 
 def test_core_imports_without_sdk_present():

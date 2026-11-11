@@ -83,6 +83,10 @@ class ChordEngine:
 
     # ------------------------------------------------------------------ instrument events
     def on_interaction(self, e: InteractionEvent, event_id: int) -> None:
+        with self._lock:  # the play window may call panic() from the UI thread
+            self._on_interaction(e, event_id)
+
+    def _on_interaction(self, e: InteractionEvent, event_id: int) -> None:
         if self.stopped:
             return
         t = e.event_type
@@ -123,9 +127,9 @@ class ChordEngine:
             if self.stopped:
                 return
             if self.chord is not None or self._pending is not None:
-                self._release(reason, None)
+                self._release("stop", None)  # deterministic log: constant reason (see engine_stop below)
             if self.accomp_running:
-                self._stop_accompaniment(None, reason)
+                self._stop_accompaniment(None, "stop")
             self.stopped = True
         if self.sched:
             self.sched.cancel_all()
@@ -136,7 +140,10 @@ class ChordEngine:
                 self.backend.close()
             except Exception as exc:  # noqa: BLE001
                 self._timing({"kind": "backend_close_error", "error": repr(exc)})
-            self._log("engine_stop", None, reason=reason)
+            # the stop reason depends on how the run ended (window, Ctrl-C, end of replay), so it goes to the timing
+            # log only; the deterministic log stays identical between a live run and its replay
+            self._log("engine_stop", None)
+            self._timing({"kind": "engine_stop", "reason": reason})
         if self.log:
             self.log.flush()
 

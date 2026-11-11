@@ -75,6 +75,8 @@ cooldown_ms = 300.0            # no new dwell within this time after a commit (p
 rearm_hold_ms = 0.0            # time in the neutral zone needed to re-arm after a commit or reset
 max_elevation_deg = 89.0       # numeric guard: forward axis must be within this of the neutral horizontal plane
 reset_on_gap_before = true     # any flagged sample gap resets the gesture, even below the gate's T_stale
+duplicate_timestamp = "reset"  # "reset": a duplicate device timestamp resets the gesture (strict) |
+                               # "skip": such a sample is ignored without a reset (research Q12; R2D-1 finding)
 
 # Bench layout only (clear separation for testing by hand or on a fixture), not an ergonomic layout.
 [[instrument.yaw_regions]]

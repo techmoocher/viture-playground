@@ -23,9 +23,16 @@
 | Q9 | Accompaniment during an interruption | It continues (it is a time reference); "mute" is available | Continue or mute? |
 | Q10 | Re-committing the sounding chord | Allowed after a return to neutral; the chord re-triggers | Re-trigger or ignore? |
 | Q11 | Sub-stale gaps (for example ≈ 50 ms after reconnecting) | Any flagged gap resets the gesture | Reset on any gap, or only when tracking becomes unusable? |
-| Q12 | Duplicate device timestamps | Stay invalidating, so they interrupt a dwell: ≈ 5 % of 500 ms dwells at 240 Hz requested, 0.5–1.3 % at 60–120 Hz (fixture rates) | Keep invalidating, skip them without resetting, or reclassify? |
+| Q12 | Duplicate device timestamps | Stay invalidating (`duplicate_timestamp = "reset"`). **R2D-1 (live bench, 2026-11-11):** 24 in 293 s caused 9 gesture resets, 4 chord releases, 1 rejected neutral capture, and about 20 s without response. A `"skip"` option exists: it ignores only samples whose sole fault is a duplicate timestamp; in a replay of R2D-1 it removed all 9 resets ([phase2d-guide.md](../phase2d-guide.md) §5) | Keep invalidating, use `"skip"`, or reclassify the flag? |
 | Q13 | "Raw commit time" for analysis | Logged: arrival time, estimated production time, processing time, MIDI send time | Which one is the protocol's raw commit time? Default field: estimated production time of the committing sample |
 | Q14 | Timing precision target (O4) | Software-side latency is reported as *estimated*. Physical audio latency is not measured | What precision is needed, and how should acoustic onset be measured? |
+
+## Found while preparing 2D (2026-11-11)
+
+| # | Topic | Engineering default | Question |
+|---|---|---|---|
+| Q15 | Passing through inner regions | Four chords on one yaw axis: reaching C or F passes through G or Am. A turn slower than region width ÷ dwell (10° / 0.5 s = 20°/s by default) commits the inner chord ([phase2d-guide.md](../phase2d-guide.md) U1) | Accept, or change the layout (two axes?), the dwell, or add a speed condition? |
+| Q16 | Smaller demo layout | Optional `config/profiles/small_yaw.toml` (regions within ±24°, otherwise the same). Not a default, no comfort claim | Should a worn exploratory demo (after O3) use it, or values set by the team? |
 
 ## Carried over from Phase 1
 

@@ -221,6 +221,86 @@ def _live(args, view: bool) -> int:
     return 0
 
 
+def cmd_play(args) -> int:
+    """Live instrument: glasses → pipeline → gesture FSM → chord engine → MIDI, with the play window.
+
+    Recorded by default (raw data, processing, interaction and music logs). Every hardware run needs the
+    operator's approval of the setup first; worn use waits for O3 (docs/phase2-proposal.md §7, 2D)."""
+    from headmusic.acquisition import power
+    from headmusic.acquisition.capture_shim import CaptureShim
+    from headmusic.acquisition.viture_source import VitureSdkSource
+    from headmusic.music.config import midi_device_arg
+    if args.mounting == "worn" and not args.o3_cleared:
+        print("refusing --mounting worn: worn use waits for open item O3 (faculty/IRB guidance on developer "
+              "self-testing). If O3 has been resolved, add --o3-cleared; the session is then labelled as worn "
+              "developer self-test data (no participants, no research data).", file=sys.stderr)
+        return 2
+    cfg = _cfg(args)
+    sdk = _sdk(args)
+    shim = CaptureShim(args.shim)
+    clock = time.perf_counter_ns
+    writer = None
+    if args.record:
+        notes = args.notes or ""
+        if args.mounting == "worn":
+            notes = ("[worn developer self-test under O3 guidance; not participant or research data] " + notes).strip()
+        meta = new_session_meta(cfg, condition="bench", mounting=args.mounting, source_kind="live", argv=sys.argv,
+                                notes=notes,
+                                extra_files={"glasses_dll": sdk.dll_path, "capture_shim_dll": shim.path})
+        out = Path(args.data) / "sessions" / session_dir_name(meta)
+        writer = SessionWriter(out, meta, cfg["io"]["flush_interval_s"])
+        print(f"recording to {out}")
+    processor = OrientationProcessor(ProcessorConfig.from_config(cfg))
+    gate = TrackingGate.from_config(cfg)
+    stack = _stack(cfg, gate, writer, clock=clock, audio=args.audio, midi_device=midi_device_arg(args.midi_device),
+                   realtime=True)
+    print(f"audio output: {stack.engine.backend.describe()}")
+    pipe = Pipeline(cfg, processor, gate, writer, clock, consumers=stack.consumers)
+    source = VitureSdkSource(sdk, shim, cfg, pipe.put, clock, pid=args.pid)
+    awake = power.keep_awake() if args.keep_awake else False
+    if writer:
+        writer.update_meta(keep_awake_requested=awake)
+    stop = threading.Event()
+    pipe.start()
+    source.start()
+
+    def neutral_timer():
+        if args.capture_neutral_at is None:
+            return
+        while not stop.is_set() and not pipe.snapshot(0.1)[1]["pose_samples"]:
+            stop.wait(0.1)
+        if not stop.wait(args.capture_neutral_at):
+            pipe.submit_command("capture_neutral", window_s=float(cfg["neutral"]["window_s"]),
+                                tau_stab_deg=float(cfg["neutral"]["tau_stab_deg"]))
+    threading.Thread(target=neutral_timer, daemon=True).start()
+    try:
+        from headmusic.viewer.play import PlayApp
+        app = PlayApp(pipe, stack, "headmusic — four-chord instrument (Phase 2)", on_close=stop.set)
+        if args.close_after:
+            app.root.after(int(args.close_after * 1000), app._close)
+        app.run()
+    except KeyboardInterrupt:
+        print("interrupted — stopping")
+    finally:
+        stop.set()
+        pipe.submit_command("panic", reason="window_closed")  # silence and disable before the slow teardown
+        source.stop(timeout=15)
+        pipe.stop(timeout=15)
+        stack.close("play_end")
+        if awake:
+            power.release()
+        _, st, _ = pipe.snapshot()
+        commits = [e["chord"] for e in stack.instrument.events if e["event_type"] == "raw_commit"]
+        print(f"commits: {commits}; all notes off")
+        if writer:
+            writer.close(clocks={**writer.meta["clocks"], "end_anchor": clock_anchor()},
+                         summary={k: st[k] for k in ("pose_samples", "valid", "invalid", "gaps", "est_missing",
+                                                     "neutral_attempts", "neutral_accepted", "max_queue")},
+                         shim_stats=shim.stats(), source_last_error=source.last_error)
+            print(f"session closed: {writer.dir}")
+    return 0
+
+
 def _wait_recording(pipe: Pipeline, source, args, stop: threading.Event) -> None:
     t_start = time.monotonic()
     t_stream: Optional[float] = None
@@ -253,6 +333,16 @@ def _wait_recording(pipe: Pipeline, source, args, stop: threading.Event) -> None
 def _stack(cfg: dict, gate, writer=None, **kw):
     from headmusic.stack import build_stack
     return build_stack(cfg, gate, writer, **kw)
+
+
+def cmd_instrument_report(args) -> int:
+    from headmusic.instrument.report import report_text
+    text = report_text(Path(args.session))
+    out = Path(args.session) / "analysis"
+    out.mkdir(exist_ok=True)
+    (out / "instrument_report.md").write_text(text, encoding="utf-8")
+    print(text)
+    return 0
 
 
 def cmd_midi_devices(args) -> int:
@@ -352,7 +442,11 @@ def cmd_replay(args) -> int:
     src.start()
     stop = threading.Event()
     try:
-        if args.view:
+        if args.view and stack:
+            from headmusic.viewer.play import PlayApp
+            PlayApp(pipe, stack, f"headmusic — REPLAY {src_dir.name} (instrument)", on_close=stop.set,
+                    live_commands=False).run()
+        elif args.view:
             from headmusic.viewer.app import ViewerApp
             ViewerApp(pipe, f"headmusic — REPLAY {src_dir.name}", on_close=stop.set).run()
         else:
@@ -457,6 +551,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--script", choices=["r6a", "r6b", "r6c", "r7", "r8"],
                    help="guided bench script (docs/bench-checklist.md): Space for every action, labels automatic")
 
+    p = sub.add_parser("play", help="live four-chord instrument with the play window (glasses needed)")
+    live_args(p)
+    p.add_argument("--audio", choices=["winmm", "null"], default="winmm")
+    p.add_argument("--midi-device", help="MIDI output device index or name substring (default: [music] config)")
+    p.add_argument("--no-record", dest="record", action="store_false", help="do not record the session")
+    p.add_argument("--no-keep-awake", dest="keep_awake", action="store_false",
+                   help="do not ask Windows to stay awake while playing")
+    p.add_argument("--close-after", type=float, help="close after S seconds (unattended checks)")
+    p.add_argument("--o3-cleared", action="store_true",
+                   help="required with --mounting worn: confirms open item O3 has been resolved")
+
     p = sub.add_parser("replay", help="replay a recorded session without glasses")
     p.add_argument("session")
     p.add_argument("--speed", default="1", help="playback speed factor, or 'max'")
@@ -476,6 +581,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("export", help="denormalised per-row export (protocol §10 fields)")
     p.add_argument("session")
     p.add_argument("--out")
+    p = sub.add_parser("instrument-report", help="Phase 2 session summary: commits, resets, estimated timing")
+    p.add_argument("session")
     p = sub.add_parser("midi-devices", help="list Windows MIDI output devices")
     p = sub.add_parser("midi-test", help="play C, G, Am, F once through the chord engine (sound check, no glasses)")
     p.add_argument("--audio", choices=["winmm", "null"], default="winmm")
@@ -483,7 +590,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seconds", type=float, default=0.8)
     p = sub.add_parser("synth", help="write a deterministic synthetic session")
     p.add_argument("scenario", choices=["stationary", "sign_flip", "yaw_wrap", "dropped", "sustained_loss",
-                                        "faults", "reconnect", "chords"])
+                                        "faults", "reconnect", "chords", "chords_faults"])
     p.add_argument("--instrument", action="store_true", help="also run the Phase 2 gesture FSM")
     p.add_argument("--out")
     return ap
@@ -499,7 +606,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     cmds = {"devices": cmd_devices, "info": cmd_info, "check-placement": cmd_check_placement,
             "record": lambda a: _live(a, view=False),
             "view": lambda a: _live(a, view=True), "replay": cmd_replay, "analyze": cmd_analyze,
-            "export": cmd_export, "synth": cmd_synth, "midi-devices": cmd_midi_devices, "midi-test": cmd_midi_test}
+            "export": cmd_export, "synth": cmd_synth, "midi-devices": cmd_midi_devices, "midi-test": cmd_midi_test,
+            "play": cmd_play, "instrument-report": cmd_instrument_report}
     return cmds[args.cmd](args)
 
 

@@ -54,6 +54,7 @@ class InstrumentConfig:
     max_elevation_deg: float
     reset_on_gap_before: bool
     start_enabled: bool
+    duplicate_timestamp: str = "reset"  # "reset" (strict) | "skip" (research question Q12)
 
     # ------------------------------------------------------------------ construction
     @classmethod
@@ -68,7 +69,9 @@ class InstrumentConfig:
                       hysteresis_deg=float(ic["hysteresis_deg"]), dwell_ms=float(ic["dwell_ms"]),
                       cooldown_ms=float(ic["cooldown_ms"]), rearm_hold_ms=float(ic["rearm_hold_ms"]),
                       max_elevation_deg=float(ic["max_elevation_deg"]),
-                      reset_on_gap_before=bool(ic["reset_on_gap_before"]), start_enabled=bool(ic["start_enabled"]))
+                      reset_on_gap_before=bool(ic["reset_on_gap_before"]), start_enabled=bool(ic["start_enabled"]),
+                      # absent in sessions recorded before 2026-11-11 evening: those ran with "reset"
+                      duplicate_timestamp=str(ic.get("duplicate_timestamp", "reset")))
         except KeyError as e:
             raise ConfigError(f"[instrument] is missing {e}") from None
         out.validate()
@@ -82,6 +85,8 @@ class InstrumentConfig:
                         ("cooldown_ms", self.cooldown_ms), ("rearm_hold_ms", self.rearm_hold_ms)):
             if not math.isfinite(v) or v < 0:
                 raise ConfigError(f"{name} must be a finite value >= 0 (got {v})")
+        if self.duplicate_timestamp not in ("reset", "skip"):
+            raise ConfigError(f"duplicate_timestamp must be 'reset' or 'skip' (got {self.duplicate_timestamp!r})")
         if self.dwell_ms <= 0:
             raise ConfigError("dwell_ms must be > 0")
         if not 0 < self.max_elevation_deg <= 90:
@@ -115,7 +120,14 @@ class InstrumentConfig:
         d["provisional"] = "engineering defaults; not validated ergonomic, comfort or safety limits"
         return d
 
+    # Parameters added after sessions were first recorded, with the value that reproduces the earlier behaviour.
+    # They enter the hash only when they differ from it, so earlier sessions keep their mapping_version.
+    _LATER_PARAMS = {"duplicate_timestamp": "reset"}
+
     def mapping_version(self) -> str:
         d = asdict(self)
         d["regions"] = [asdict(r) for r in self.regions]
+        for k, implicit in self._LATER_PARAMS.items():
+            if d.get(k) == implicit:
+                del d[k]
         return hashlib.sha256(json.dumps(d, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]

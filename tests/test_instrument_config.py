@@ -73,3 +73,21 @@ def test_synth_and_replay_cli_roundtrip(tmp_path, capsys):
     assert meta["instrument"]["regions"][0]["chord"] == "C"
     assert main(["replay", str(s), "--reprocess", "--instrument", "--out", str(tmp_path / "r")]) == 0
     assert "interaction_events.jsonl identical to the original: True" in capsys.readouterr().out
+
+
+def test_small_yaw_profile_is_valid_and_smaller():
+    from headmusic.config import REPO_ROOT
+    cfg = load_config(REPO_ROOT / "config" / "profiles" / "small_yaw.toml")
+    ic = InstrumentConfig.from_config(cfg)
+    assert [r.chord for r in ic.regions] == ["C", "G", "Am", "F"]
+    assert max(max(abs(r.yaw_min_deg), abs(r.yaw_max_deg)) for r in ic.regions) == 24.0
+    assert ic.dwell_ms == 500.0  # only the geometry changes
+
+
+def test_mapping_version_of_the_defaults_matches_recorded_sessions():
+    """Sessions recorded on 2026-11-11 (incl. R2D-1) carry this version. Adding an option must not change it
+    while the option keeps the earlier behaviour; changing a default must (then update this value knowingly)."""
+    assert InstrumentConfig.from_config(load_config()).mapping_version() == "a169dfad746ccf23"
+    cfg = load_config()
+    cfg["instrument"]["duplicate_timestamp"] = "skip"
+    assert InstrumentConfig.from_config(cfg).mapping_version() != "a169dfad746ccf23"
