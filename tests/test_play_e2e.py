@@ -84,6 +84,7 @@ def test_play_end_to_end_with_a_simulated_device(tmp_path, monkeypatch, capsys):
                    "--no-keep-awake"])
     out = capsys.readouterr().out
     assert rc == 0, out
+    # MVP defaults (80 ms / 2° settle): the turn to C crosses G without sounding it
     assert "commits: ['C', 'Am']; all notes off" in out
     session = next((data / "sessions").iterdir())
 
@@ -93,7 +94,8 @@ def test_play_end_to_end_with_a_simulated_device(tmp_path, monkeypatch, capsys):
     assert "stale_tick" in inputs  # the pause was detected live, between samples
     music = read_jsonl(session / "music_events.jsonl")
     offs = [m for m in music if m["event_type"] == "midi_note_off"]
-    assert offs[0]["chord"] == "C" and offs[0]["reason"] == "interruption:stale_tick"
+    assert {"chord": "C", "reason": "interruption:stale_tick"}.items() <= next(
+        m for m in offs if m["chord"] == "C").items()
     assert [m["event_type"] for m in music][-2:] == ["panic", "engine_stop"]  # closing the window = panic first
     timing = read_jsonl(session / "music_timing.jsonl")
     lat = [t["estimated_software_latency_ns"] for t in timing if "estimated_software_latency_ns" in t]

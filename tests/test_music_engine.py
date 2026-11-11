@@ -22,8 +22,12 @@ STREAM = {"selected_hz": 240, "reference_rate_hz": 202.5}
 VOICING = {"C": [60, 64, 67], "G": [55, 59, 62], "Am": [57, 60, 64], "F": [53, 57, 60]}
 
 
-def cfg_with(music=None, accompaniment=None):
+def cfg_with(music=None, accompaniment=None, instrument=None):
+    """Engine tests drive the engine through the protocol machine and the 2A layout (stable since 2B);
+    the iteration-2 machine is tested in test_instrument_direct.py."""
+    from instrument_helpers import PROTOCOL_2A
     cfg = load_config()
+    cfg["instrument"] = {**cfg["instrument"], **PROTOCOL_2A, **(instrument or {})}
     cfg["music"] = {**cfg["music"], **(music or {})}
     cfg["music"]["accompaniment"] = {**cfg["music"]["accompaniment"], **(accompaniment or {})}
     return cfg
@@ -103,7 +107,10 @@ def test_chord_change_turns_the_previous_chord_off_first():
 
 @pytest.mark.parametrize("allow, expected", [(True, 2), (False, 1)])
 def test_same_chord_recommit(allow, expected):
-    stack, _ = run(tour_items(yaws=(31.0, 31.0)), cfg_with({"allow_same_chord_recommit": allow}))
+    # re-committing the sounding chord happens in the protocol machine (via neutral); the direct machine never
+    # re-triggers the selected chord (test_instrument_direct.py)
+    stack, _ = run(tour_items(yaws=(31.0, 31.0)), cfg_with({"allow_same_chord_recommit": allow},
+                                                          instrument={"transitions": "via_neutral"}))
     assert len([e for e in stack.instrument.events if e["event_type"] == "raw_commit"]) == 2
     assert len(mev(stack, "midi_note_on")) == expected
     assert len(mev(stack, "commit_ignored")) == 2 - expected
@@ -358,8 +365,7 @@ def test_duplicate_timestamp_skip_keeps_the_chord_sounding():
     s = syn.resequence(s[:i] + [extra] + s[i:])
     items = syn.Trace(s, [syn.capture_command(20, window_s=0.5)], [syn.connected_event(1)]).items()
     strict, _ = run(items)
-    cfg = cfg_with()
-    cfg["instrument"] = {**cfg["instrument"], "duplicate_timestamp": "skip"}
+    cfg = cfg_with(instrument={"duplicate_timestamp": "skip"})
     skip, _ = run(items, cfg)
     reasons = lambda st: [e.get("reason") for e in mev(st, "midi_note_off")]  # noqa: E731
     assert "interruption:last_sample_invalid" in reasons(strict)

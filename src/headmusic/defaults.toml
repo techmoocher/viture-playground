@@ -68,36 +68,53 @@ sdk_log_level = 1              # 0 none, 1 error, 2 info, 3 debug
 # relative to the neutral reference (+ = turn left), equal to the documented display yaw.
 [instrument]
 start_enabled = true
-neutral_yaw_deg = 4.0          # neutral (idle) zone |yaw_rel| <= this; left beyond this + hysteresis
+neutral_yaw_deg = 5.0          # neutral zone |yaw_rel| <= this: rest / silence (latch) and where the neutral
+                               # is calibrated. Keys may start at its edge. (2A layout: 4.0)
 hysteresis_deg = 1.5           # enter a zone inside its interval, stay while within the interval ± this
-dwell_ms = 500.0               # protocol §6 candidate range 400–600 ms (to be piloted and frozen)
-cooldown_ms = 300.0            # no new dwell within this time after a commit (placeholder)
+dwell_ms = 80.0                # short settle time (MVP interaction refinement, docs/mvp-iteration-2.md §8):
+                               # a key sounds once the cursor has stayed within dwell_stability_deg for this
+                               # long; keys crossed faster than ~stability/dwell (25°/s) stay silent, and the
+                               # active chord keeps sounding meanwhile. 0 = immediate keys (sound on entry).
+                               # The protocol §6 candidate is 400–600 ms (via_neutral.toml, confirm.toml: 500)
+cooldown_ms = 0.0              # no new chord within this time after a commit; 0 = off (MVP iteration 2;
+                               # the protocol machine profile uses 300)
 rearm_hold_ms = 0.0            # time in the neutral zone needed to re-arm after a commit or reset
 max_elevation_deg = 89.0       # numeric guard: forward axis must be within this of the neutral horizontal plane
 reset_on_gap_before = true     # any flagged sample gap resets the gesture, even below the gate's T_stale
 duplicate_timestamp = "reset"  # "reset": a duplicate device timestamp resets the gesture (strict) |
                                # "skip": such a sample is ignored without a reset (research Q12; R2D-1 finding)
+# MVP iteration 2 (docs/mvp-iteration-2.md; an MVP iteration, not a protocol change; research Q17)
+transitions = "direct"         # "direct": switch chords without returning to neutral | "via_neutral": protocol §6
+playback = "latch"             # "latch": sounds until another commit, a release or an interruption |
+                               # "hold": sounds only while the head stays in the chord's region
+dwell_stability_deg = 2.0      # the dwell restarts if yaw_rel moves more than this from where it started
+                               # (a crossing never settles, a stop does); 0 = off
+neutral_rest_release_ms = 0.0  # latch: 0 = the neutral zone never silences the chord (it sounds until another
+                               # chord is confirmed, R, Esc or a safety interruption). > 0 = resting in neutral
+                               # this long releases it (iteration 2 used 150; it cut slow crossings of neutral)
 
-# Bench layout only (clear separation for testing by hand or on a fixture), not an ergonomic layout.
+# Contiguous keys (MVP iteration 2: "no gap between the keys"): each key starts where the previous one ends, so
+# moving from one to the next switches directly; hysteresis decides at each shared edge. Provisional layout for
+# bench use, NOT an ergonomic layout. The 2A layout with gaps is in config/profiles/layout_2a_gaps.toml.
 [[instrument.yaw_regions]]
 chord = "C"
-yaw_min_deg = 22.0
+yaw_min_deg = 18.0
 yaw_max_deg = 40.0
 
 [[instrument.yaw_regions]]
 chord = "G"
-yaw_min_deg = 8.0
+yaw_min_deg = 5.0
 yaw_max_deg = 18.0
 
 [[instrument.yaw_regions]]
 chord = "Am"
 yaw_min_deg = -18.0
-yaw_max_deg = -8.0
+yaw_max_deg = -5.0
 
 [[instrument.yaw_regions]]
 chord = "F"
 yaw_min_deg = -40.0
-yaw_max_deg = -22.0
+yaw_max_deg = -18.0
 
 # Music engine (Phase 2B). docs/phase2-proposal.md §5. PROVISIONAL ENGINEERING DEFAULTS.
 [music]
@@ -107,6 +124,9 @@ channel = 1                    # MIDI channel for chords (1..16)
 velocity = 100
 release_on_interruption = true # an interruption (any gesture reset) silences the sounding chord (research Q8)
 allow_same_chord_recommit = true  # re-committing the sounding chord re-triggers it (research Q10)
+program = 16                   # General MIDI program (0-based) sent at start: 16 Drawbar Organ sustains while
+                               # held and starts at once. 0 Piano decays by itself (the R2D-1 "no sustain");
+                               # 19 Church Organ, 48 Strings, 89 Warm Pad (slower attack). MVP iteration 2
 
 [music.chords]                 # MIDI note numbers (60 = C4)
 C = [60, 64, 67]               # C4 E4 G4

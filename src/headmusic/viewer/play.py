@@ -3,6 +3,7 @@
 It never decides anything. Every action is a pipeline command, so it is logged and replayed:
     N      capture neutral              Esc    EMERGENCY STOP (panic: silence, instrument disabled)
     E      enable the instrument        A      accompaniment start / stop (if enabled in config)
+    R      release the sounding chord (intentional release, MVP iteration 2)
 If the pipeline does not process the emergency stop within `fallback_ms`, the window silences the engine
 directly as a last resort (logged; such a run is no longer replay-identical).
 """
@@ -41,7 +42,8 @@ class PlayApp:
         self.stop_btn.pack(side="left")
         state = "normal" if live_commands else "disabled"
         tk.Button(bar, text="Capture neutral  [N]", command=self.capture, state=state, **btn).pack(side="left", padx=6)
-        tk.Button(bar, text="Enable  [E]", command=self.enable, state=state, **btn).pack(side="left")
+        tk.Button(bar, text="Release chord  [R]", command=self.release, state=state, **btn).pack(side="left")
+        tk.Button(bar, text="Enable  [E]", command=self.enable, state=state, **btn).pack(side="left", padx=6)
         tk.Button(bar, text="Accompaniment  [A]", command=self.toggle_accompaniment,
                   state=state if self.acc_enabled else "disabled", **btn).pack(side="left", padx=6)
         self.feedback = tk.Label(self.root, text="", bg=BG, fg="#fbbc04", font=("Segoe UI", 11, "bold"), anchor="w")
@@ -54,6 +56,7 @@ class PlayApp:
         if live_commands:
             self.root.bind("<Key-n>", lambda e: self.capture())
             self.root.bind("<Key-e>", lambda e: self.enable())
+            self.root.bind("<Key-r>", lambda e: self.release())
             self.root.bind("<Key-a>", lambda e: self.toggle_accompaniment())
         self._acc_on = False
         self.model = None
@@ -79,6 +82,10 @@ class PlayApp:
         cfg = self.p.cfg["neutral"]
         self.p.submit_command("capture_neutral", window_s=float(cfg["window_s"]), tau_stab_deg=float(cfg["tau_stab_deg"]))
         self._say("neutral capture requested: hold still at your neutral pose")
+
+    def release(self) -> None:
+        self.p.submit_command("release_chord")
+        self._say("release requested")
 
     def enable(self) -> None:
         self.p.submit_command("instrument_enable")
@@ -146,9 +153,11 @@ class PlayApp:
         c.create_rectangle(x(0), py, x(1), py + 14, outline=GRID)
         if m.progress is not None:
             c.create_rectangle(x(0), py, x(m.progress), py + 14, fill="#2f6b9a", outline="")
-        c.create_text(x(0), py + 18, anchor="nw", text="dwell progress", fill=MUTED, font=("Segoe UI", 9))
+        c.create_text(x(0), py + 18, anchor="nw", text=m.candidate_text + "   (the sounding chord changes only when "
+                      "the candidate is confirmed)", fill=TEXT if m.progress is not None else MUTED,
+                      font=("Segoe UI", 10))
         # status lines
-        lines = [m.yaw_text, m.accompaniment_text, m.output_text,
+        lines = [m.yaw_text, m.notes_text, m.mode_text + "   ·   " + m.accompaniment_text, m.output_text,
                  "recent commits: " + (" ".join(m.recent_commits) or "—"),
                  "regions, dwell and all thresholds are provisional engineering defaults, not ergonomic limits"]
         c.create_text(pad, H - 8, anchor="sw", text="\n".join(lines), fill=MUTED, font=("Segoe UI", 10))

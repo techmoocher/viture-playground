@@ -11,7 +11,12 @@ from headmusic.types import ProcessedSample
 DT_NS = 5_000_000  # sample period used by the driver (exact, so dwell arithmetic is easy to check)
 H0 = 1_000_000_000_000
 D0 = 5_000_000_000_000
-YAW = {"C": 31.0, "G": 13.0, "Am": -13.0, "F": -31.0, "neutral": 0.0, "between": 20.0}
+YAW = {"C": 31.0, "G": 13.0, "Am": -13.0, "F": -31.0, "neutral": 0.0, "between": 20.0}  # "between": 2A layout
+LAYOUT_2A = [("C", 22.0, 40.0), ("G", 8.0, 18.0), ("Am", -18.0, -8.0), ("F", -40.0, -22.0)]  # with gaps
+# [instrument] overrides for the protocol §6 machine with the 2A layout, as tested since 2A
+PROTOCOL_2A = {"transitions": "via_neutral", "dwell_stability_deg": 0.0, "neutral_rest_release_ms": 0.0,
+               "neutral_yaw_deg": 4.0, "dwell_ms": 500.0, "cooldown_ms": 300.0,
+               "yaw_regions": [{"chord": c, "yaw_min_deg": a, "yaw_max_deg": b} for c, a, b in LAYOUT_2A]}
 
 
 def make_cfg(**overrides) -> InstrumentConfig:
@@ -32,6 +37,16 @@ class Driver:
     """Feeds samples at DT_NS; records every input for the invariant checker."""
 
     def __init__(self, **overrides) -> None:
+        # Driver() is the protocol §6 machine as tested since 2A; pass transitions="direct" (and, if wanted,
+        # dwell_stability_deg) for the MVP iteration-2 machine.
+        overrides.setdefault("transitions", "via_neutral")
+        if overrides["transitions"] == "via_neutral":
+            overrides.setdefault("dwell_stability_deg", 0.0)
+            overrides.setdefault("neutral_rest_release_ms", 0.0)
+            overrides.setdefault("neutral_yaw_deg", 4.0)
+            overrides.setdefault("regions", LAYOUT_2A)
+            overrides.setdefault("dwell_ms", 500.0)
+            overrides.setdefault("cooldown_ms", 300.0)
         self.cfg = make_cfg(**overrides)
         self.fsm = GestureFSM(self.cfg)
         self.seq = 0

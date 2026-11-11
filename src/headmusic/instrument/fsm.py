@@ -1,7 +1,18 @@
 """GestureFSM: dwell-to-commit chord selection from yaw regions (docs/phase2-proposal.md §3–§4).
 
+transitions = "via_neutral" (the protocol §6 machine):
     inactive ─► unarmed ─(neutral zone, rearm hold)─► neutral ─(leave)─► aiming ─(enter region i,
     cooldown over)─► dwell_armed(i) ─(dwell_ms of device time)─► [commit] ─► return_to_neutral ─► neutral
+
+transitions = "direct" (MVP iteration 2, docs/mvp-iteration-2.md): no return to neutral between chords.
+    The ACTIVE chord (the last confirmed one) keeps sounding while a CANDIDATE region is confirmed; only the
+    candidate's confirmation switches the sound. A failed, cancelled or restarted confirmation leaves it alone.
+    neutral/aiming ─(enter region i ≠ selected)─► dwell_armed(i) ─(stable dwell)─► [commit] ─► engaged(i)
+    engaged(i) ─(leave)─► aiming/neutral; entering the selected chord's region gives engaged, never a re-trigger.
+    After an interruption or a release, the region under the head is blocked (unarmed) until it is left.
+
+playback = "latch": the selected chord stays selected until another commit, a release or an interruption.
+playback = "hold": leaving the selected chord's region releases it (chord_release, reason left_region).
 
 Pure and deterministic: no clock is read. Dwell, cooldown and re-arm hold are device-time differences
 within one connection. Inputs are processed samples with the TrackingGate status at their arrival, plus
@@ -15,8 +26,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from headmusic.instrument.events import (AIMING, DWELL_ARMED, INACTIVE, NEUTRAL, RETURN_TO_NEUTRAL, UNARMED,
-                                         InteractionEvent)
+from headmusic.instrument.events import (AIMING, DWELL_ARMED, ENGAGED, INACTIVE, NEUTRAL, RETURN_TO_NEUTRAL,
+                                         UNARMED, InteractionEvent)
 from headmusic.instrument.regions import InstrumentConfig, yaw_elevation_deg
 from headmusic.orientation.flags import INVALIDATING, TS_DUPLICATE
 from headmusic.tracking.gate import GateStatus
@@ -31,6 +42,8 @@ class GestureFSM:
         self._dwell_ns = int(round(cfg.dwell_ms * 1e6))
         self._cooldown_ns = int(round(cfg.cooldown_ms * 1e6))
         self._rearm_ns = int(round(cfg.rearm_hold_ms * 1e6))
+        self._rest_ns = int(round(cfg.neutral_rest_release_ms * 1e6))
+        self.direct = cfg.transitions == "direct"
         self.enabled = cfg.start_enabled
         self.suspended = False  # a neutral capture is in progress
         self.state = INACTIVE
@@ -42,6 +55,11 @@ class GestureFSM:
         self._last_commit: Optional[tuple[int, int]] = None  # (connection_id, device_ts)
         self._watermark: Optional[int] = None  # host ns; data produced at or before it never arms
         self.last_commit_chord: Optional[str] = None
+        self._selected: Optional[int] = None  # index of the selected (sounding, per the FSM) chord
+        self._blocked: Optional[int] = None  # direct: region that may not be selected until it is left
+        self._block_pending = True  # direct: block the region under the head at the next fresh sample
+        self._dwell_anchor: Optional[float] = None  # yaw_rel where the current dwell (re)started
+        self._rest_since_d: Optional[int] = None
         self.progress: Optional[float] = None
         self.yaw_rel_deg: Optional[float] = None
         self.elevation_deg: Optional[float] = None
@@ -51,8 +69,24 @@ class GestureFSM:
     def region_chord(self) -> Optional[str]:
         return self.cfg.regions[self._region].chord if self._region is not None else None
 
+    @property
+    def selected_chord(self) -> Optional[str]:
+        return self.cfg.regions[self._selected].chord if self._selected is not None else None
+
+    @property
+    def active_chord(self) -> Optional[str]:
+        """The last confirmed chord: sounding (per the FSM) until another chord is confirmed or it is released."""
+        return self.selected_chord
+
+    @property
+    def candidate_chord(self) -> Optional[str]:
+        """The chord whose region is being confirmed (dwell_armed), or None."""
+        return self.region_chord if self.state == DWELL_ARMED else None
+
     def snapshot(self) -> dict:
         return {"state": self.state, "region": self.region_chord, "progress": self.progress,
+                "selected": self.selected_chord, "active": self.active_chord,
+                "candidate": self.candidate_chord, "transitions": self.cfg.transitions, "playback": self.cfg.playback,
                 "yaw_rel_deg": self.yaw_rel_deg, "elevation_deg": self.elevation_deg,
                 "inactive_reason": self.inactive_reason if self.state == INACTIVE else None,
                 "enabled": self.enabled, "suspended": self.suspended, "last_commit_chord": self.last_commit_chord}
@@ -135,6 +169,8 @@ class GestureFSM:
             if not self.enabled:
                 self.enabled = True
                 ev.append(self._ev("instrument_enabled", ctx))
+        elif kind == "release_chord":
+            self._release_selected("intentional", ctx, ev, block_if_inside=True)
         elif kind == "panic":
             self.enabled = False
             ev.append(self._ev("panic", ctx))
@@ -163,7 +199,35 @@ class GestureFSM:
         self._region = None
         self._dwell_start_d = None
         self._neutral_since_d = None
+        self._dwell_anchor = None
+        self._rest_since_d = None
         self.progress = None
+
+    def _release_selected(self, reason: str, ctx: dict, ev: list, block_if_inside: bool = False) -> None:
+        """Release the selected chord on purpose (not a safety interruption): chord_release → engine note-off.
+        With block_if_inside (R), a candidate being confirmed is cancelled too, and the region under the head is
+        blocked until it is left: R means silence, so nothing may start sounding a moment later."""
+        if block_if_inside and self.direct and self.state == DWELL_ARMED:
+            ev.append(self._ev("dwell_cancel", ctx, chord=self.region_chord, reason=reason,
+                               dwell_elapsed_ns=None, active_chord=self.selected_chord))
+            self._blocked, self._region = self._region, None
+            self._dwell_start_d, self._dwell_anchor, self.progress = None, None, None
+            if self._selected is not None:
+                chord = self.selected_chord
+                self._selected, self._rest_since_d = None, None
+                ev.append(self._ev("chord_release", ctx, chord=chord, reason=reason))
+            self._set_state(UNARMED, ctx, ev, reason="released_in_region")
+            return
+        if self._selected is None:
+            return
+        chord = self.selected_chord
+        inside = self.state == ENGAGED
+        self._selected = None
+        self._rest_since_d = None
+        ev.append(self._ev("chord_release", ctx, chord=chord, reason=reason))
+        if inside and block_if_inside and self.direct:
+            self._blocked, self._region = self._region, None  # no re-trigger while staying in its region
+            self._set_state(UNARMED, ctx, ev, reason="released_in_region")
 
     def _bump_watermark(self, wm: Optional[int]) -> None:
         if wm is not None and (self._watermark is None or wm > self._watermark):
@@ -172,10 +236,15 @@ class GestureFSM:
     def _reset(self, reason: str, to_state: str, ctx: dict, ev: list, wm: Optional[int]) -> None:
         prev = self.state
         if prev == DWELL_ARMED:
-            ev.append(self._ev("dwell_cancel", ctx, chord=self.region_chord, reason=reason))
-        if prev not in (INACTIVE, UNARMED):
+            ev.append(self._ev("dwell_cancel", ctx, chord=self.region_chord, reason=reason,
+                               active_chord=self.selected_chord if self.direct else None))
+        if prev not in (INACTIVE, UNARMED) or self._selected is not None:
+            # a gesture reset makes the chord engine release whatever sounds (safety interruption)
             ev.append(self._ev("gesture_reset", ctx, chord=self.region_chord, reason=reason))
         self._clear_gesture()
+        self._selected = None  # the engine releases on gesture_reset / inactive
+        self._blocked = None
+        self._block_pending = True
         self._bump_watermark(wm)
         self._set_state(to_state, ctx, ev, reason=reason)
 
@@ -194,6 +263,27 @@ class GestureFSM:
         return lc is None or lc[0] != conn or d - lc[1] >= self._cooldown_ns
 
     def _advance(self, d: int, yaw: Optional[float], elev: Optional[float], ctx: dict, ev: list) -> None:
+        cfg, h = self.cfg, self.cfg.hysteresis_deg
+        eligible = yaw is not None and abs(elev) <= cfg.max_elevation_deg
+        if self._selected is not None:
+            stays_selected = eligible and cfg.regions[self._selected].stays(yaw, h)
+            if cfg.playback == "hold" and not stays_selected:
+                self._release_selected("left_region", ctx, ev)
+            elif cfg.playback == "latch" and self._rest_ns > 0:
+                if eligible and abs(yaw) <= cfg.neutral_yaw_deg:  # the neutral zone proper, not a key's edge
+                    if self._rest_since_d is None:
+                        self._rest_since_d = d
+                    elif d - self._rest_since_d >= self._rest_ns:
+                        self._release_selected("neutral_rest", ctx, ev)
+                else:
+                    self._rest_since_d = None
+        if self.direct:
+            self._advance_direct(d, yaw, eligible, ctx, ev)
+        else:
+            self._advance_via_neutral(d, yaw, elev, ctx, ev)
+
+    def _advance_via_neutral(self, d: int, yaw: Optional[float], elev: Optional[float], ctx: dict,
+                             ev: list) -> None:
         cfg, h = self.cfg, self.cfg.hysteresis_deg
         eligible = yaw is not None and abs(elev) <= cfg.max_elevation_deg
         in_n_enter = eligible and abs(yaw) <= cfg.neutral_yaw_deg
@@ -227,6 +317,7 @@ class GestureFSM:
                     ev.append(self._ev("raw_commit", ctx, chord=r.chord, dwell_elapsed_ns=elapsed))
                     self._last_commit = (ctx["connection_id"], d)
                     self.last_commit_chord = r.chord
+                    self._selected = self._region
                     self._clear_gesture()
                     self._set_state(RETURN_TO_NEUTRAL, ctx, ev, reason="committed")
                 return
@@ -254,3 +345,94 @@ class GestureFSM:
             self.progress = 0.0
             self._set_state(DWELL_ARMED, ctx, ev, reason="dwell_start")
             ev.append(self._ev("dwell_start", ctx, chord=self.region_chord, dwell_elapsed_ns=0))
+
+    # ------------------------------------------------------------------ transitions = "direct"
+    def _advance_direct(self, d: int, yaw: Optional[float], eligible: bool, ctx: dict, ev: list) -> None:
+        cfg, h = self.cfg, self.cfg.hysteresis_deg
+        regions = cfg.regions
+
+        def stays(i: Optional[int]) -> bool:
+            return i is not None and eligible and regions[i].stays(yaw, h)
+
+        if self._block_pending:  # first fresh, usable sample after a reset: block the region under the head
+            self._block_pending = False
+            self._blocked = next((i for i in range(len(regions)) if stays(i)), None)
+        if self._blocked is not None:
+            if stays(self._blocked):
+                self._region, self.progress = None, None
+                self._set_state(UNARMED, ctx, ev, reason="blocked_region")
+                return
+            self._blocked = None  # left the blocked region: re-armed (no neutral needed)
+
+        if self.state == ENGAGED:
+            if stays(self._region):
+                return
+            ev.append(self._ev("aim_exit", ctx, chord=self.region_chord))
+            self._region = None
+            self._set_state(AIMING, ctx, ev, reason="left_region")
+
+        if self.state == DWELL_ARMED:
+            r = regions[self._region]
+            elapsed = d - self._dwell_start_d
+            if stays(self._region):
+                stab = cfg.dwell_stability_deg
+                if stab > 0 and abs(yaw - self._dwell_anchor) > stab:
+                    self._dwell_start_d, self._dwell_anchor, self.progress = d, yaw, 0.0
+                    ev.append(self._ev("dwell_restart", ctx, chord=r.chord, reason="unstable", dwell_elapsed_ns=elapsed,
+                                       active_chord=self.selected_chord))
+                    return
+                self.progress = min(1.0, elapsed / self._dwell_ns) if self._dwell_ns else 1.0
+                if elapsed >= self._dwell_ns:
+                    self._commit_direct(d, ctx, ev, elapsed)
+                return
+            ev.append(self._ev("dwell_cancel", ctx, chord=r.chord, reason="left_region", dwell_elapsed_ns=elapsed,
+                               active_chord=self.selected_chord))
+            ev.append(self._ev("aim_exit", ctx, chord=r.chord))
+            self._region, self._dwell_start_d, self._dwell_anchor, self.progress = None, None, None, None
+            self._set_state(AIMING, ctx, ev, reason="left_region")
+
+        # neutral, aiming or unarmed (just unblocked)
+        self.progress = None
+        if self._region is not None and not stays(self._region):  # was waiting for the cooldown in a region
+            ev.append(self._ev("aim_exit", ctx, chord=self.region_chord))
+            self._region = None
+        if self._region is None and eligible:
+            i = cfg.region_entered(yaw)
+            if i is not None:
+                self._region = i
+                ev.append(self._ev("aim_enter", ctx, chord=self.region_chord))
+        if self._region is None:
+            in_n_enter = eligible and abs(yaw) <= cfg.neutral_yaw_deg
+            in_n_stay = eligible and abs(yaw) <= cfg.neutral_yaw_deg + h
+            if self.state == NEUTRAL and in_n_stay or in_n_enter:
+                if self.state != NEUTRAL:
+                    self._set_state(NEUTRAL, ctx, ev, reason="rest")
+                    ev.append(self._ev("return_neutral", ctx))  # protocol §10.3 event; here a rest, not a gate
+            else:
+                self._set_state(AIMING, ctx, ev, reason="between_regions")
+            return
+        if self._region == self._selected:
+            if self.state != ENGAGED:
+                self._set_state(ENGAGED, ctx, ev, reason="selected_region")
+                ev.append(self._ev("engaged_enter", ctx, chord=self.region_chord, reason="no_retrigger"))
+            return
+        if self._cooldown_over(ctx["connection_id"], d):
+            self._dwell_start_d, self._dwell_anchor, self.progress = d, yaw, 0.0
+            self._set_state(DWELL_ARMED, ctx, ev, reason="dwell_start")
+            ev.append(self._ev("dwell_start", ctx, chord=self.region_chord, dwell_elapsed_ns=0,
+                               active_chord=self.selected_chord))
+            if self._dwell_ns == 0:  # immediate keys (MVP iteration 2): sound on entry
+                self._commit_direct(d, ctx, ev, 0)
+        else:
+            self._set_state(AIMING, ctx, ev, reason="cooldown")
+
+    def _commit_direct(self, d: int, ctx: dict, ev: list, elapsed: int) -> None:
+        r = self.cfg.regions[self._region]
+        replaced = self.selected_chord  # the active chord this confirmation replaces (released by the engine)
+        ev.append(self._ev("dwell_complete", ctx, chord=r.chord, dwell_elapsed_ns=elapsed, active_chord=replaced))
+        ev.append(self._ev("raw_commit", ctx, chord=r.chord, dwell_elapsed_ns=elapsed, active_chord=replaced))
+        self._last_commit = (ctx["connection_id"], d)
+        self.last_commit_chord = r.chord
+        self._selected = self._region
+        self._dwell_start_d, self._dwell_anchor, self.progress = None, None, None
+        self._set_state(ENGAGED, ctx, ev, reason="committed")

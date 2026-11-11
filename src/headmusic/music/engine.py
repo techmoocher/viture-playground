@@ -28,7 +28,9 @@ from headmusic.music.config import MusicConfig
 from headmusic.music.log import MusicLog
 from headmusic.music.scheduler import Scheduler
 
-NOTE_ON, NOTE_OFF, CC = 0x90, 0x80, 0xB0
+NOTE_ON, NOTE_OFF, CC, PROGRAM = 0x90, 0x80, 0xB0, 0xC0
+GM_NAMES = {0: "Acoustic Grand Piano", 16: "Drawbar Organ", 19: "Church Organ", 48: "String Ensemble 1",
+            88: "Pad 1 (new age)", 89: "Pad 2 (warm)"}
 CC_ALL_SOUND_OFF, CC_ALL_NOTES_OFF = 120, 123
 
 
@@ -58,6 +60,9 @@ class ChordEngine:
         self._click_token: Optional[int] = None
         self.failed: Optional[str] = None
         self.stopped = False
+        self.last_release: Optional[tuple[str, Optional[int]]] = None  # (reason, host ns or None)
+        self.notes_on_since: Optional[int] = None
+        self._send_program()
 
     # ------------------------------------------------------------------ pipeline consumer API
     def on_sample(self, ps) -> None:
@@ -94,12 +99,18 @@ class ChordEngine:
             self._commit(e, event_id)
         elif t == "panic":
             self.panic(cause=(event_id, e))
+        elif t == "chord_release":  # intentional release, hold-mode exit, neutral rest (MVP iteration 2)
+            self._release(e.reason, (event_id, e))
         elif t == "gesture_reset" or (t == "state_change" and e.state == INACTIVE):
             if self.cfg.release_on_interruption:
                 self._release(f"interruption:{e.reason}", (event_id, e))
             if self.accomp_running and not self.accomp_muted and self.cfg.accompaniment.on_interruption == "mute":
                 self.accomp_muted = True
                 self._log("accompaniment_mute", (event_id, e), reason=e.reason)
+        elif (t == "state_change" and self.accomp_muted and e.prev_state in (INACTIVE, "unarmed")
+              and e.state not in (INACTIVE, "unarmed")):
+            self.accomp_muted = False  # direct transitions: tracking recovered without a return to neutral
+            self._log("accompaniment_unmute", (event_id, e))
         elif t == "return_neutral":
             if self.accomp_muted:
                 self.accomp_muted = False
@@ -120,6 +131,7 @@ class ChordEngine:
             self.chord = None
             self._log("panic", cause, reason=reason)
             self._all_notes_off(reason)
+            self._send_program()  # a device reset may restore the default patch
 
     def close(self, reason: str = "stop") -> None:
         """Every stop path ends here (normal stop, Ctrl-C, exceptions, end of replay). Idempotent."""
@@ -148,9 +160,20 @@ class ChordEngine:
             self.log.flush()
 
     def snapshot(self) -> dict:
-        return {"chord": self.chord, "pending": self._pending[1] if self._pending else None,
-                "accompaniment": "muted" if self.accomp_muted else ("running" if self.accomp_running else "off"),
-                "failed": self.failed}
+        with self._lock:
+            notes = sorted(n for ch, n in self._phys if ch == self._ch)
+            p = self.cfg.program
+            return {"chord": self.chord, "pending": self._pending[1] if self._pending else None,
+                    "accompaniment": "muted" if self.accomp_muted else ("running" if self.accomp_running else "off"),
+                    "failed": self.failed, "notes_on": notes, "notes_on_since": self.notes_on_since if notes else None,
+                    "last_release": self.last_release,
+                    "program": "synth default" if p is None else f"{p} {GM_NAMES.get(p, '')}".strip()}
+
+    def _send_program(self) -> None:
+        """Program Change on the chord channel (sustained patch). Timing log only: it is configuration
+        (recorded in session.json), so the deterministic music log is unchanged."""
+        if self.cfg.program is not None:
+            self._send(PROGRAM | self._ch, self.cfg.program, 0, {"kind": "program_change"}, force=True)
 
     # ------------------------------------------------------------------ chord logic (deterministic)
     def _commit(self, e: InteractionEvent, eid: int) -> None:
@@ -196,6 +219,7 @@ class ChordEngine:
                 return
             mev = self._log("midi_note_off", cause, chord=self.chord, notes=list(self.cfg.notes(self.chord)),
                             reason=reason)
+            self.last_release = (reason, self.clock() if self.clock else None)
             self.chord = None
             self._do_release(mev, reason)
 
@@ -296,6 +320,8 @@ class ChordEngine:
         kind = status & 0xF0
         key = (status & 0x0F, d1)
         if kind == NOTE_ON and d2 > 0:
+            if key[0] == self._ch and not any(ch == self._ch for ch, _ in self._phys):
+                self.notes_on_since = t1
             self._phys.add(key)
         elif kind == NOTE_OFF or (kind == NOTE_ON and d2 == 0):
             self._phys.discard(key)
@@ -317,6 +343,7 @@ class ChordEngine:
             self.chord = None
             self._timing({"kind": "emergency", "reason": reason, "detail": detail})
             self._all_notes_off(reason)
+            self._send_program()
 
     # ------------------------------------------------------------------ logging
     def _log(self, event_type: str, cause, **fields) -> int:

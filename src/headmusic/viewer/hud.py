@@ -10,7 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
-from headmusic.instrument.events import AIMING, DWELL_ARMED, INACTIVE, NEUTRAL, RETURN_TO_NEUTRAL, UNARMED
+from headmusic.instrument.events import (AIMING, DWELL_ARMED, ENGAGED, INACTIVE, NEUTRAL, RETURN_TO_NEUTRAL,
+                                         UNARMED)
 from headmusic.instrument.regions import InstrumentConfig
 
 OK, WARN, BAD, MUTED = "ok", "warn", "bad", "muted"
@@ -44,6 +45,9 @@ class HudModel:
     output_level: str
     recent_commits: tuple[str, ...] = field(default_factory=tuple)
     axis_ticks: tuple[tuple[float, str], ...] = field(default_factory=tuple)
+    notes_text: str = ""
+    mode_text: str = ""
+    candidate_text: str = ""  # the chord being confirmed and its progress, apart from the sounding chord
 
 
 def axis_half_range(icfg: InstrumentConfig) -> float:
@@ -87,6 +91,8 @@ def hud_model(icfg: InstrumentConfig, fsm: dict, engine: dict, gate_usable: bool
     state = fsm.get("state")
     region = fsm.get("region")
     sounding = engine.get("chord")
+    direct = fsm.get("transitions") == "direct"
+    latch = fsm.get("playback", "latch") == "latch"
 
     if not connected:
         tracking, tlevel = "NOT CONNECTED", BAD
@@ -99,13 +105,33 @@ def hud_model(icfg: InstrumentConfig, fsm: dict, engine: dict, gate_usable: bool
     if state == INACTIVE:
         reason = fsm.get("inactive_reason")
         st, lvl, hint = "INACTIVE", BAD if reason == "panic" else MUTED, _hint_for(reason)
+    elif state == UNARMED and direct:
+        st, lvl, hint = "NOT ARMED", WARN, "leave this region to re-arm (no need to return to neutral)"
     elif state == UNARMED:
         st, lvl, hint = "NOT ARMED", WARN, "return to the neutral zone to arm"
+    elif state == NEUTRAL and direct:
+        st, lvl = "REST (neutral)", OK
+        hint = (f"{sounding} keeps sounding: turn to another chord to switch, R to release" if sounding and latch
+                else "turn toward a chord and hold to play it")
     elif state == NEUTRAL:
         st, lvl, hint = "NEUTRAL: armed", OK, "turn toward a chord and hold to play it"
     elif state == AIMING:
         st, lvl = "AIMING", OK
-        hint = f"in {region}: waiting for the cooldown" if region else "turn into a chord region"
+        if region:
+            hint = f"in {region}: waiting for the cooldown"
+        elif direct and sounding and latch:
+            hint = f"{sounding} keeps sounding: hold another chord to switch, R to release"
+        else:
+            hint = "turn into a chord region"
+    elif state == ENGAGED:
+        st, lvl = f"PLAYING {region}", OK
+        hint = (f"{region} latched: move to another chord and hold to switch" if latch
+                else f"{region} sounds while you stay here; leaving releases it")
+    elif state == DWELL_ARMED and direct:
+        progress = fsm.get("progress") or 0.0
+        st, lvl = f"CONFIRMING {region}  {progress * 100:3.0f}%", OK
+        hint = (f"{sounding} keeps sounding until {region} is confirmed: hold still on {region}" if sounding
+                else f"hold still on {region} to play it")
     elif state == DWELL_ARMED:
         progress = fsm.get("progress") or 0.0
         st, lvl, hint = f"DWELL {region}  {progress * 100:3.0f}%", OK, f"hold to play {region}"
@@ -142,8 +168,20 @@ def hud_model(icfg: InstrumentConfig, fsm: dict, engine: dict, gate_usable: bool
     acc_text = f"accompaniment: {acc}" if accompaniment_enabled else "accompaniment: disabled in config"
     failed = engine.get("failed")
     out_text, out_level = (f"OUTPUT FAILED: {failed}", BAD) if failed else ("output ok", MUTED)
+    notes = engine.get("notes_on") or []
+    notes_text = "notes on: " + (" ".join(str(x) for x in notes) if notes else "none")
+    lr = engine.get("last_release")
+    if lr:
+        notes_text += f"   ·   last release: {lr[0]}"
+    if engine.get("program"):
+        notes_text += f"   ·   patch: {engine['program']}"
+    if state == DWELL_ARMED:
+        candidate_text = f"candidate: {region}   confirming {(fsm.get('progress') or 0.0) * 100:3.0f}%"
+    else:
+        candidate_text = "candidate: none"
+    mode_text = (f"transitions: {fsm.get('transitions', 'via_neutral')}   ·   playback: {fsm.get('playback', 'latch')}")
     n = icfg.neutral_yaw_deg
     ticks = tuple((yaw_to_x(v, half), f"{v:+.0f}°") for v in (half, half / 2, 0.0, -half / 2, -half))
     return HudModel(tracking, tlevel, st, lvl, hint, tuple(boxes), yaw_to_x(n, half), yaw_to_x(-n, half), cursor,
                     eligible, yaw_text, progress, sounding_text, acc_text, out_text, out_level,
-                    tuple(recent_commits[-8:]), ticks)
+                    tuple(recent_commits[-8:]), ticks, notes_text, mode_text, candidate_text)

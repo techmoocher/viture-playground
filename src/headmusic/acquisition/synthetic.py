@@ -227,9 +227,64 @@ def scenario_chords_faults() -> Trace:
     return Trace(first + second, cmds, ev, {"scenario": "chords_faults"})
 
 
+def scenario_transitions() -> Trace:
+    """Confirmed switching demo (use config/profiles/confirm.toml: 500 ms dwell, 3° stability), default keys, latch:
+    - G, then DIRECTLY to C (no neutral);
+    - a fast sweep from C across G and neutral into Am: C keeps sounding until Am is confirmed (no gap);
+    - F;
+    - a SLOW traverse (12 deg/s) from F to C across Am, neutral and G: none of them plays (dwell stability),
+      and F keeps sounding through the slow pass across neutral until C is confirmed;
+    - C is released on purpose (R) while still in C, then a rest.
+    Expected commits: G, C, Am, F, C. With config/profiles/hold.toml each chord stops when its key is left."""
+    rate = 202.5
+    keys = [(0.0, 0.0), (1.5, 0.0), (1.8, 13.0), (2.8, 13.0), (3.0, 31.0), (4.0, 31.0), (4.3, -13.0), (5.3, -13.0),
+            (5.6, -31.0), (6.6, -31.0), (11.77, 31.0), (13.0, 31.0), (13.3, 0.0), (15.0, 0.0)]
+    s = generate(15.5, orientation=keyframes(keys))
+    release = Command("release_chord", 0, {}, after_seq=int(12.7 * rate))
+    return Trace(s, [capture_command(20, window_s=0.5), release], [connected_event(1)], {"scenario": "transitions"})
+
+
+def scenario_continuous() -> Trace:
+    """The operator's flow with the MVP defaults (80 ms / 2° settle, latch, neutral never silences): calibrate at
+    neutral once, then C -> G -> F -> Am -> C continuously without returning to neutral. Every move takes 0.25 s
+    (52-124 deg/s), so the keys crossed on the way (G on the way to C, Am on G -> F, neutral and G on Am -> C) stay
+    silent and the previous chord sounds until the next one is confirmed. Then a rest in neutral (C keeps
+    sounding) and R (silence).
+    Expected commits: C, G, F, Am, C. With config/profiles/immediate.toml the crossed keys sound briefly."""
+    rate = 202.5
+    keys = [(0.0, 0.0), (1.5, 0.0)]
+    t = 1.5
+    for y in (31.0, 13.0, -31.0, -13.0, 31.0):
+        keys += [(t + 0.25, y), (t + 1.25, y)]
+        t += 1.25
+    keys += [(t + 0.3, 0.0), (t + 2.5, 0.0)]
+    s = generate(t + 3.0, orientation=keyframes(keys))
+    release = Command("release_chord", 0, {}, after_seq=int((t + 1.8) * rate))
+    return Trace(s, [capture_command(20, window_s=0.5), release], [connected_event(1)], {"scenario": "continuous"})
+
+
+def scenario_traverse() -> Trace:
+    """Far traverses between F and C (each crosses Am, neutral and G) at decreasing speed, to compare settle
+    settings by ear (docs/mvp-iteration-2.md §8): F -> C at 60 deg/s, C -> F at 30 deg/s, F -> C at 15 deg/s, then R.
+    Expected commits with the defaults (80 ms / 2°): F, C, F, then Am, G, C on the 15 deg/s pass (known
+    limitation: below ~25 deg/s a crossing looks like a placement). With config/profiles/immediate.toml every
+    crossed key sounds; with confirm.toml none does."""
+    rate = 202.5
+    keys = [(0.0, 0.0), (1.5, 0.0), (1.8, -31.0), (3.0, -31.0)]
+    t = 3.0
+    for y_from, y_to, speed in ((-31.0, 31.0, 60.0), (31.0, -31.0, 30.0), (-31.0, 31.0, 15.0)):
+        t += abs(y_to - y_from) / speed
+        keys += [(t, y_to), (t + 1.2, y_to)]
+        t += 1.2
+    s = generate(t + 0.5, orientation=keyframes(keys))
+    release = Command("release_chord", 0, {}, after_seq=int((t - 0.3) * rate))
+    return Trace(s, [capture_command(20, window_s=0.5), release], [connected_event(1)], {"scenario": "traverse"})
+
+
 SCENARIOS = {
     "stationary": scenario_stationary, "sign_flip": scenario_sign_flip, "yaw_wrap": scenario_yaw_wrap,
     "dropped": scenario_dropped, "sustained_loss": scenario_sustained_loss, "faults": scenario_faults,
     "reconnect": scenario_reconnect, "chords": scenario_chords,
-    "chords_faults": scenario_chords_faults,
+    "chords_faults": scenario_chords_faults, "transitions": scenario_transitions,
+    "continuous": scenario_continuous, "traverse": scenario_traverse,
 }

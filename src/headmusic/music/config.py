@@ -37,6 +37,7 @@ class MusicConfig:
     allow_same_chord_recommit: bool
     chords: tuple[tuple[str, tuple[int, ...]], ...]
     accompaniment: AccompanimentConfig
+    program: Optional[int] = None  # General MIDI program (0-based) sent at start; None = synth default (piano)
 
     @classmethod
     def from_config(cls, cfg: dict, required_chords: Iterable[str] = ()) -> "MusicConfig":
@@ -55,7 +56,9 @@ class MusicConfig:
                       velocity=int(m["velocity"]), release_on_interruption=bool(m["release_on_interruption"]),
                       allow_same_chord_recommit=bool(m["allow_same_chord_recommit"]),
                       chords=tuple((str(k), tuple(int(n) for n in v)) for k, v in m["chords"].items()),
-                      accompaniment=acc)
+                      accompaniment=acc,
+                      # absent in sessions recorded before MVP iteration 2: no program change was sent then
+                      program=None if m.get("program") is None else int(m["program"]))
         except KeyError as e:
             raise MusicConfigError(f"[music] is missing {e}") from None
         out.validate(required_chords)
@@ -71,6 +74,8 @@ class MusicConfig:
             if not 1 <= ch <= 16:
                 raise MusicConfigError(f"{name} must be 1..16 (got {ch})")
         midi7("velocity", self.velocity)
+        if self.program is not None:
+            midi7("program", self.program)
         for chord, notes in self.chords:
             if not notes:
                 raise MusicConfigError(f"chord {chord} has no notes")

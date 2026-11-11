@@ -1,0 +1,7 @@
+# MVP iteration 2 with confirmation: direct switching between contiguous keys, but each chord must be held for
+# a dwell before it sounds, with the stability rule against slow passes through other keys. Use if passing
+# across keys should stay silent. Provisional engineering values (docs/mvp-iteration-2.md).
+[instrument]
+dwell_ms = 500.0
+cooldown_ms = 300.0
+dwell_stability_deg = 3.0

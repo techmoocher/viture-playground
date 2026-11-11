@@ -84,7 +84,7 @@ Each reset raises a freshness watermark. Samples produced (by the gate's estimat
 
 | File | Deterministic | Content |
 |---|---|---|
-| `interaction_events.jsonl` | yes | `event_id`, `event_type`, `state`, `prev_state`, the deciding sample (`seq`, `connection_id`, `neutral_calibration_id`, `device_ts_raw`, `host_rx_monotonic_ns`, `produced_host_ns`), `input_host_ns` for non-sample inputs, `chord`, `reason`, `dwell_elapsed_ns`, `yaw_rel_deg`, `mapping_version` |
+| `interaction_events.jsonl` | yes | `event_id`, `event_type`, `state`, `prev_state`, the deciding sample (`seq`, `connection_id`, `neutral_calibration_id`, `device_ts_raw`, `host_rx_monotonic_ns`, `produced_host_ns`), `input_host_ns` for non-sample inputs, `chord`, `reason`, `dwell_elapsed_ns`, `yaw_rel_deg`, `mapping_version`; `active_chord` on candidate events in direct mode only (mvp-iteration-2.md §8) |
 | `instrument_inputs.jsonl` | yes (as recorded) | `stale_tick` and `late_processing` with positions |
 | `interaction_timing.jsonl` | no | `event_id`, `decision_host_ns` (processing time); live runs only |
 
@@ -103,6 +103,10 @@ Each reset raises a freshness watermark. Samples produced (by the gate's estimat
 ## Sound
 
 The chord engine is in [music.md](music.md) (2B).
+
+## MVP iteration 2
+
+The defaults are now direct switching between contiguous keys with a short settle time (80 ms within 2°): the active chord keeps sounding while a candidate is confirmed, in latch playback. The neutral zone is for calibration and rest and does not silence the chord. See [mvp-iteration-2.md](mvp-iteration-2.md). This page's states and parameters describe the protocol §6 machine (`config/profiles/via_neutral.toml`).
 
 ## Play window
 
