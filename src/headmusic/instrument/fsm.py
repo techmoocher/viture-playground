@@ -18,6 +18,7 @@ from typing import Optional
 from headmusic.instrument.events import (AIMING, DWELL_ARMED, INACTIVE, NEUTRAL, RETURN_TO_NEUTRAL, UNARMED,
                                          InteractionEvent)
 from headmusic.instrument.regions import InstrumentConfig, yaw_elevation_deg
+from headmusic.orientation.flags import INVALIDATING, TS_DUPLICATE
 from headmusic.tracking.gate import GateStatus
 from headmusic.types import ProcessedSample
 
@@ -77,6 +78,15 @@ class GestureFSM:
             return ev
         if late:
             self._inactive("late_processing", ctx, ev, wm)
+            return ev
+        if (self.cfg.duplicate_timestamp == "skip" and self.state != INACTIVE
+                and INVALIDATING.intersection(ps.flags) == {TS_DUPLICATE}
+                and tuple(gs.reasons) == ("last_sample_invalid",)
+                and (ps.connection_id, ps.neutral_calibration_id) == self._key):
+            # Research question Q12, option "skip": a sample whose ONLY fault is a duplicate device timestamp
+            # (G0: distinct values ~1 ms after the previous sample) is ignored. It neither advances nor resets
+            # the gesture; every other fault, staleness and frame change stays strict.
+            ev.append(self._ev("sample_skipped", ctx, reason=TS_DUPLICATE))
             return ev
         if not gs.usable:
             self._inactive("|".join(gs.reasons), ctx, ev, wm)

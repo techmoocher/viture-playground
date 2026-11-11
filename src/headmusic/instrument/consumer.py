@@ -91,8 +91,8 @@ class InstrumentConsumer:
         if self.replay or self.fsm.state == INACTIVE:
             return
         gs = self.gate.status(now)
-        if gs.usable:
-            return
+        if "stale" not in gs.reasons:
+            return  # ticks catch time passing without data; sample-level faults are handled on the sample itself
         self._log_input({"kind": "stale_tick", "after_seq": self._last_seq, "k": self._k, "host_ns": now,
                          "reasons": list(gs.reasons)})
         self._emit(self.fsm.interrupt("stale_tick", now))

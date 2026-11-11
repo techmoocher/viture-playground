@@ -359,3 +359,60 @@ def test_slow_turn_through_an_inner_region_commits_it(deg_per_s, commits_g):
     d.move(0.0, YAW["C"], 1000 * YAW["C"] / deg_per_s)
     d.hold(YAW["C"], 700)
     assert ("G" in d.commits()) is commits_g
+
+
+# ---------------------------------------------------------------------------- duplicate timestamps (Q12)
+DUP = dict(usable=False, reasons=("last_sample_invalid",), flags=("ts_duplicate",))
+
+
+def test_duplicate_timestamp_resets_by_default():
+    d = Driver()
+    _to_state(d, "dwell_mid")
+    d.sample(YAW["C"], **DUP)
+    d.hold(YAW["C"], 1000)
+    assert d.commits() == [] and d.fsm.state == UNARMED
+
+
+def test_duplicate_timestamp_skip_keeps_the_dwell_running():
+    d = Driver(duplicate_timestamp="skip")
+    d.arm()
+    d.sample(YAW["C"])  # dwell starts
+    d.hold(YAW["C"], 200)
+    d.sample(YAW["C"], **DUP)  # ignored: no reset, the dwell continues on device time
+    assert d.fsm.state == DWELL_ARMED and d.types()[-1] == "sample_skipped"
+    d.hold(YAW["C"], 295)
+    assert d.commits() == ["C"]
+    assert "gesture_reset" not in d.types()
+    check_invariant_skip(d)
+
+
+def check_invariant_skip(d):
+    """The invariant with skipped duplicate-timestamp samples excluded from the run."""
+    d.inputs = [(k, v) for k, v in d.inputs if not (k == "sample" and "ts_duplicate" in v["flags"])]
+    check_invariant(d)
+
+
+@pytest.mark.parametrize("extra", [
+    dict(usable=False, reasons=("last_sample_invalid", "stale"), flags=("ts_duplicate",)),
+    dict(usable=False, reasons=("last_sample_invalid",), flags=("ts_duplicate", "nonfinite")),
+    dict(usable=False, reasons=("last_sample_invalid",), flags=("nonfinite",)),
+])
+def test_skip_mode_stays_strict_for_everything_else(extra):
+    d = Driver(duplicate_timestamp="skip")
+    _to_state(d, "dwell_mid")
+    d.sample(YAW["C"], **extra)
+    assert d.fsm.state in (INACTIVE, UNARMED) and "gesture_reset" in d.types()
+
+
+def test_skip_mode_does_not_hide_a_frame_change():
+    d = Driver(duplicate_timestamp="skip")
+    _to_state(d, "dwell_mid")
+    d.nid += 1
+    d.sample(YAW["C"], **DUP)
+    assert d.fsm.state in (INACTIVE, UNARMED)
+
+
+def test_invalid_duplicate_timestamp_option_is_rejected():
+    from headmusic.instrument.regions import ConfigError
+    with pytest.raises(ConfigError, match="duplicate_timestamp"):
+        Driver(duplicate_timestamp="ignore")

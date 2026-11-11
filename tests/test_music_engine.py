@@ -16,7 +16,7 @@ from headmusic.orientation.processor import OrientationProcessor, ProcessorConfi
 from headmusic.pipeline import Pipeline
 from headmusic.stack import build_stack
 from headmusic.tracking.gate import TrackingGate
-from headmusic.types import Command
+from headmusic.types import Command, RawPoseSample
 
 STREAM = {"selected_hz": 240, "reference_rate_hz": 202.5}
 VOICING = {"C": [60, 64, 67], "G": [55, 59, 62], "Am": [57, 60, 64], "F": [53, 57, 60]}
@@ -345,3 +345,23 @@ def test_synth_writes_music_log_and_replay_reproduces_it(tmp_path, capsys):
     assert (s / "music_events.jsonl").stat().st_size > 0
     assert main(["replay", str(s), "--reprocess", "--instrument", "--out", str(tmp_path / "r")]) == 0
     assert "music_events.jsonl identical to the original: True" in capsys.readouterr().out
+
+
+def test_duplicate_timestamp_skip_keeps_the_chord_sounding():
+    """R2D-1 finding: in "reset" mode a duplicate device timestamp releases the sounding chord; in "skip" it does not."""
+    keys, end = syn.chord_tour()
+    s = syn.generate(end + 0.5, orientation=syn.keyframes(keys))
+    i = int(2.45 * 202.5)  # C committed and sounding, head still in C
+    # a real duplicate (G0, R2D-1) is an EXTRA sample ~1 ms after the previous one, same device timestamp
+    prev = s[i - 1]
+    extra = RawPoseSample(0, 1, prev.host_rx_monotonic_ns + 1_000_000, prev.device_ts_raw, prev.values)
+    s = syn.resequence(s[:i] + [extra] + s[i:])
+    items = syn.Trace(s, [syn.capture_command(20, window_s=0.5)], [syn.connected_event(1)]).items()
+    strict, _ = run(items)
+    cfg = cfg_with()
+    cfg["instrument"] = {**cfg["instrument"], "duplicate_timestamp": "skip"}
+    skip, _ = run(items, cfg)
+    reasons = lambda st: [e.get("reason") for e in mev(st, "midi_note_off")]  # noqa: E731
+    assert "interruption:last_sample_invalid" in reasons(strict)
+    assert reasons(skip)[0] == "chord_change"
+    check_pairing(msgs(skip))

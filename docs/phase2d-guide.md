@@ -2,7 +2,7 @@
 
 **Status (2026-11-11):**
 - **Done:** synthetic replay demos, and the end-to-end `play` test with a simulated device.
-- **Waiting for the operator's approval:** live bench run R2D-1 (glasses on the table, not worn).
+- **Done:** live bench run R2D-1 (glasses on the table, not worn); results in §5.
 - **Waiting for O3:** worn use.
 
 **Every angle and time below is a provisional engineering default**, not an ergonomic claim. No participant or research data is collected in Phase 2.
@@ -126,6 +126,35 @@ headmusic synth chords_faults --instrument
 
 The report gives the estimated software-side timing. Audio-output latency is not measured (O4).
 
+### R2D-1 results (2026-11-11)
+
+Session `20261111T185107Z_bench_fixture_b6751896`: 293 s, 57 070 samples, 202.4 Hz. Glasses upright on the table, turned by hand, not worn. Approved by the operator after the placement check (tilt 5.5°, maximum deviation 0.016°, 0 gaps, 1 invalid).
+
+| Check | Result |
+|---|---|
+| Chords from turns | **23 commits** (C 4, G 8, Am 6, F 5) once working. **None in the first 110 s:** see T1 below |
+| Device pauses while handling | **5**, of 296–598 ms, about 1 per minute (the G0 pattern). All detected live (`stale_tick`), each resetting the gesture; the sounding chord was released twice |
+| Emergency stop | Esc twice (218.0 s, 221.9 s): silenced, FSM disabled. **E** re-enabled (237.4 s), then G played after a return to neutral |
+| Unplug and replug | Stale 261.3 s, disconnect detected 262.3 s, reconnected 268.4 s as connection 2, new neutral 274.2 s, F at 286.1 s. Nothing played at C after the replug. A 53 ms gap 2.5 s after reconnect (G0 pattern) |
+| Close | Panic sent first, then the device teardown (2.0 s). Session closed cleanly |
+| Duplicate device timestamps | **24** (about 1 per 12 s, G0: 0.05 %). In strict mode they caused **9 gesture resets, 4 chord releases and 1 rejected neutral capture** (`invalid_samples_in_window`) |
+| Replay | `replay --reprocess --instrument`: processed, calibration, interaction and music logs **byte-identical** |
+| Software timing (estimated) | Commit decided after sample production: p50 2.7 ms, p95 5.4 ms, max 5.7 ms. Chord note-on sent: p50 3.6 ms, p95 6.8 ms, max 31.1 ms. MIDI call: p50 0.05 ms, max 30 ms (one call). Excludes the SDK filter, synth and audio device |
+| Neutral captures | 7 requested, 6 accepted, 1 rejected (a duplicate timestamp in the window) |
+| End of run | 2 `late_processing` inputs: the last two samples, drained after the 2 s teardown. Harmless: the FSM was already disabled by the closing panic |
+
+**What went wrong in the first 110 s (T1, now understood):**
+- At 74.0 s, a duplicate timestamp arrived just as the glasses left neutral. The strict rule reset the gesture, and a reset requires a return to neutral.
+- The operator kept turning toward C instead. Further duplicates (79.7, 86.8, 89.4, 92.2 s) kept the instrument `NOT ARMED`, so nothing played for about 20 s, until a new neutral was captured at 96.8 s.
+- From the operator's side, the instrument simply did not respond.
+
+**Counterfactual replay with `duplicate_timestamp = "skip"`** (indicative only: the operator would have moved differently):
+- the 9 duplicate-caused resets disappear (16 samples skipped);
+- no chord is released by a duplicate;
+- the first commit comes at 75 s instead of 111 s.
+
+Pauses, the unplug and Esc behave exactly as before.
+
 ## 6. Human data stays separate until O3
 
 - `headmusic play --mounting worn` **refuses to run** unless `--o3-cleared` is given. When it is given, the session notes say "worn developer self-test under O3 guidance; not participant or research data" (tested).
@@ -139,8 +168,11 @@ The report gives the estimated software-side timing. Audio-output latency is not
 | U1 | Usability | Slow turns through G or Am to reach C or F commit the inner chord (threshold about 20°/s with the defaults) | Open; research decision (Q15). Characterised by a test |
 | U2 | Usability | The `small_yaw` profile's 6–8° regions likely cancel more dwells | Unverified; check in a later run |
 | A1 | Audio | The GS Wavetable Synth has noticeable output latency (known; not measured here) | Open. Options: a loopback MIDI port with a low-latency synth, or built-in synthesis (`sounddevice`, P6). Measurement needs O4 |
-| T1 | Tracking | Duplicate device timestamps cancel a dwell: an estimated 5 % of 500 ms dwells at 240 Hz requested | Open (Q12). Check the count of `last_sample_invalid` cancels in the R2D-1 report |
-| T2 | Tracking | 300/600 ms device pauses and cable-movement disconnects (G0) | Handled by design (reset, release); to be observed in R2D-1 |
+| T1 | Tracking / usability | **Confirmed in R2D-1:** duplicate device timestamps (about 1 per 12 s) reset gestures (9×), cut sounding chords (4×) and caused about 20 s of no response, because each reset requires a return to neutral | Option added: `[instrument] duplicate_timestamp = "skip"` (ignores only samples whose sole fault is a duplicate timestamp). **Default still `reset`**; the choice is Q12 |
+| T2 | Tracking | 300/600 ms device pauses and cable-movement disconnects (G0) | **Observed in R2D-1:** 5 pauses in about 5 minutes of handling, all handled (reset, release). Each needs a return to neutral, which costs usability. Cause unknown; no unplanned disconnect |
+| A2 | Audio | One MIDI call took 30 ms (the rest under 0.2 ms) | Observed once in R2D-1; the GS synth driver probably blocked. Watch in later runs |
+| B2 | Bug, fixed | Idle ticks treated *any* unusable gate state as stale, so skip mode would have been undone by the next tick | Fixed: ticks react only to staleness. Found by a test of the skip option |
+| B3 | Bug, fixed | Adding the new option changed `mapping_version`, breaking byte-identical replay of earlier sessions | Fixed: new options enter the hash only when non-default. A test pins the default version |
 | B1 | Bug, fixed | The engine's stop reason was written to the deterministic log, so a live session and its replay differed | Fixed here: the reason goes to the timing log. Covered by the e2e test |
 | H1 | Display | The HUD is on the PC monitor. Showing it in the glasses means wearing them | Waits for O3 |
 | P1 | Process | CI does not run: the token lacks the Workflows permission, so `ci/unit-tests` is unpushed | Open (your decision) |

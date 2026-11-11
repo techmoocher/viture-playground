@@ -82,3 +82,12 @@ def test_small_yaw_profile_is_valid_and_smaller():
     assert [r.chord for r in ic.regions] == ["C", "G", "Am", "F"]
     assert max(max(abs(r.yaw_min_deg), abs(r.yaw_max_deg)) for r in ic.regions) == 24.0
     assert ic.dwell_ms == 500.0  # only the geometry changes
+
+
+def test_mapping_version_of_the_defaults_matches_recorded_sessions():
+    """Sessions recorded on 2026-11-11 (incl. R2D-1) carry this version. Adding an option must not change it
+    while the option keeps the earlier behaviour; changing a default must (then update this value knowingly)."""
+    assert InstrumentConfig.from_config(load_config()).mapping_version() == "a169dfad746ccf23"
+    cfg = load_config()
+    cfg["instrument"]["duplicate_timestamp"] = "skip"
+    assert InstrumentConfig.from_config(cfg).mapping_version() != "a169dfad746ccf23"

@@ -128,7 +128,7 @@ def check_invariant(drv: Driver) -> int:
         assert ev[start_idx].chord == e.chord
         assert not any(ev[i].event_type in ("dwell_cancel", "gesture_reset") for i in range(start_idx, idx))
         assert not any(start_idx < p <= idx for p in interrupts_at), "interruption inside the dwell"
-        run = [by_seq[q] for q in range(s0, s1 + 1)]
+        run = [by_seq[q] for q in range(s0, s1 + 1) if q in by_seq]  # skipped samples may be excluded
         assert all(r["usable"] and not r["late"] for r in run)
         assert all("gap_before" not in r["flags"] for r in run[1:]) or not cfg.reset_on_gap_before
         assert len({(r["conn"], r["nid"]) for r in run}) == 1
