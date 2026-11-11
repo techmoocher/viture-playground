@@ -157,3 +157,10 @@ def test_view_script_requires_record(capsys):
     from headmusic.cli import main
     assert main(["view", "--script", "r6a"]) == 2
     assert "--script needs --record" in capsys.readouterr().err
+
+
+def test_r7_and_r8_scripts():
+    assert [s.label for s in SCRIPTS["r7"]] == ["neutral_before", "unplug_replug", "neutral_after"]
+    assert [s.label for s in SCRIPTS["r8"]] == ["cable_move", "hand_near", "lift_and_back"]
+    from headmusic.cli import build_parser
+    assert build_parser().parse_args(["view", "--record", "--script", "r8"]).script == "r8"

@@ -373,7 +373,7 @@ def build_parser() -> argparse.ArgumentParser:
     live_args(p)
     p.add_argument("--record", action="store_true", help="also record the session")
     p.add_argument("--close-after", type=float, help="close the viewer after S seconds (unattended checks)")
-    p.add_argument("--script", choices=["r6a", "r6b", "r6c"],
+    p.add_argument("--script", choices=["r6a", "r6b", "r6c", "r7", "r8"],
                    help="guided bench script (docs/bench-checklist.md): Space for every action, labels automatic")
 
     p = sub.add_parser("replay", help="replay a recorded session without glasses")

@@ -144,5 +144,24 @@ SCRIPTS: dict[str, list[Step]] = {
 }
 
 
+SCRIPTS["r7"] = [  # step 9: unplug / replug
+    Step("neutral", "neutral_before", _FLAT_A),
+    Step("segment", "unplug_replug", "Glasses flat on the table, untouched. Keep them untouched for the whole step.",
+         "unplug the USB cable at the PC end, wait about 5 s, plug it back in, and wait until the status line shows "
+         "CONNECTED again (a few seconds)."),
+    Step("neutral", "neutral_after", "Glasses still untouched where they were."),
+]
+SCRIPTS["r8"] = [  # step 9b: what causes the ~300 / ~600 ms device-side pauses while the glasses are handled?
+    Step("segment", "cable_move", "Glasses flat on line A, untouched.",
+         "move the USB cable gently near the PC end for about 10 s, without touching the glasses or the table near them."),
+    Step("segment", "hand_near", "Glasses flat on line A, untouched.",
+         "hold your hand about 5 cm in front of the lenses, then near the inner side of the nose bridge, for about 10 s "
+         "in total, without touching anything."),
+    Step("segment", "lift_and_back", "Glasses flat on line A.",
+         "lift the glasses off the table by the frame, hold them in the air for about 5 s (do not put them on), and put "
+         "them back flat on line A."),
+]
+
+
 def make_script(name: str, hold_s: float = 2.0) -> GuidedScript:
     return GuidedScript(name, SCRIPTS[name], hold_s)
