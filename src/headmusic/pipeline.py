@@ -187,11 +187,16 @@ class Pipeline:
         if self._last_rx is None:
             return
         now = self.clock()
-        stale = now - self._last_rx > self.t_stale_ns
+        gs = self.gate.status(now)
+        if gs.age_ns is not None:  # pose: data age from the estimated production time (TrackingGate)
+            age = gs.age_ns
+        else:  # raw IMU mode feeds no samples to the gate: arrival age
+            age = now - self._last_rx
+        stale = age > self.t_stale_ns
         if stale != self._stale:
             self._stale = stale
             e = Event("stale_begin" if stale else "stale_end", now,
-                      {"age_ms": round((now - self._last_rx) / 1e6, 3), "t_stale_ms": self.cfg["gate"]["t_stale_ms"]})
+                      {"age_ms": round(age / 1e6, 3), "t_stale_ms": self.cfg["gate"]["t_stale_ms"]})
             if self.writer:
                 self.writer.write_event(e, self._last_seq)
 

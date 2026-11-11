@@ -1,4 +1,4 @@
-"""Command-line interface: headmusic devices | info | record | view | replay | analyze | export | synth."""
+"""Command-line interface: headmusic devices | info | check-placement | record | view | replay | analyze | export | synth."""
 from __future__ import annotations
 
 import argparse
@@ -86,8 +86,63 @@ def cmd_info(args) -> int:
             sdk.destroy(h)
 
 
+# --------------------------------------------------------------------------- placement check
+def cmd_check_placement(args) -> int:
+    """Stream for a few seconds without writing anything; print stillness and tilt for the operator."""
+    from headmusic.acquisition.capture_shim import CaptureShim
+    from headmusic.acquisition.viture_source import VitureSdkSource
+    from headmusic.metrics.placement import format_summary, placement_summary
+    from headmusic.types import RawPoseSample
+    cfg = _cfg(args)
+    if cfg["imu"]["mode"] != "pose":
+        print("check-placement uses pose mode", file=sys.stderr)
+        return 2
+    sdk = _sdk(args)
+    shim = CaptureShim(args.shim)
+    items: list = []
+    lock = threading.Lock()
+    count = [0]
+
+    def sink(x) -> None:
+        with lock:
+            items.append(x)
+            if isinstance(x, RawPoseSample):
+                count[0] += 1
+
+    source = VitureSdkSource(sdk, shim, cfg, sink, time.perf_counter_ns, pid=args.pid)
+    source.start()
+    t_start, t_stream = time.monotonic(), None
+    try:
+        while True:
+            time.sleep(0.1)
+            now = time.monotonic()
+            if t_stream is None and count[0]:
+                t_stream = now
+            if t_stream is None and now - t_start > args.connect_timeout:
+                print("no samples within --connect-timeout; is the device connected and not used by another app?",
+                      file=sys.stderr)
+                break
+            if source.finished.is_set() or (t_stream is not None and now - t_stream >= args.seconds):
+                break
+    except KeyboardInterrupt:
+        print("\ninterrupted")
+    finally:
+        source.stop(timeout=15)
+    with lock:
+        collected = list(items)
+    if not count[0]:
+        if source.last_error:
+            print(f"error: {source.last_error}", file=sys.stderr)
+        return 2
+    print(format_summary(placement_summary(collected, cfg)))
+    return 0
+
+
 # --------------------------------------------------------------------------- live record / view
 def _live(args, view: bool) -> int:
+    if view and getattr(args, "script", None) and not args.record:
+        print("--script needs --record (a guided bench run is always recorded)", file=sys.stderr)
+        return 2
     from headmusic.acquisition.capture_shim import CaptureShim
     from headmusic.acquisition.viture_source import VitureSdkSource
     cfg = _cfg(args)
@@ -107,7 +162,7 @@ def _live(args, view: bool) -> int:
                                write_raw_imu=cfg["imu"]["mode"] == "raw", write_processed=cfg["imu"]["mode"] == "pose")
         print(f"recording to {out}")
     processor = OrientationProcessor(ProcessorConfig.from_config(cfg))
-    gate = TrackingGate(int(cfg["gate"]["t_stale_ms"] * 1_000_000))
+    gate = TrackingGate.from_config(cfg)
     pipe = Pipeline(cfg, processor, gate, writer, clock)
     source = VitureSdkSource(sdk, shim, cfg, pipe.put, clock, pid=args.pid)
     pipe.start()
@@ -129,7 +184,12 @@ def _live(args, view: bool) -> int:
     try:
         if view:
             from headmusic.viewer.app import ViewerApp
-            app = ViewerApp(pipe, "headmusic — VITURE head orientation (Phase 1)", on_close=stop.set)
+            script = None
+            if args.script:
+                from headmusic.viewer.guided import make_script
+                script = make_script(args.script)
+                pipe.submit_command("script_start", name=args.script, steps=[st.label for st in script.steps])
+            app = ViewerApp(pipe, "headmusic — VITURE head orientation (Phase 1)", on_close=stop.set, script=script)
             if args.close_after:
                 app.root.after(int(args.close_after * 1000), app._close)
             app.run()
@@ -196,7 +256,7 @@ def cmd_replay(args) -> int:
     src = ReplaySource(src_dir, speed=None if args.speed == "max" else float(args.speed))
     cfg = load_config(args.config) if args.config else (src.config_snapshot or load_config())
     processor = OrientationProcessor(ProcessorConfig.from_config(cfg))
-    gate = TrackingGate(int(cfg["gate"]["t_stale_ms"] * 1_000_000))
+    gate = TrackingGate.from_config(cfg)
     if args.reprocess:
         meta = copy.deepcopy(src.meta)
         meta["source"] = {"kind": "replay", "replay_of_session_id": src.meta.get("session_id"),
@@ -243,7 +303,7 @@ def cmd_replay(args) -> int:
 def cmd_analyze(args) -> int:
     from headmusic.metrics.report import analyze_session
     stationary = True if args.stationary else None
-    analyze_session(Path(args.session), stationary=stationary)
+    analyze_session(Path(args.session), stationary=stationary, reference_rate_hz=args.reference_rate_hz)
     print((Path(args.session) / "analysis" / "report.md").read_text(encoding="utf-8"))
     return 0
 
@@ -265,7 +325,7 @@ def cmd_synth(args) -> int:
     out = Path(args.out) if args.out else Path(args.data) / "sessions" / session_dir_name(meta)
     writer = SessionWriter(out, meta, cfg["io"]["flush_interval_s"])
     processor = OrientationProcessor(ProcessorConfig.from_config(cfg))
-    pipe = Pipeline(cfg, processor, TrackingGate(int(cfg["gate"]["t_stale_ms"] * 1e6)), writer, clock=None,
+    pipe = Pipeline(cfg, processor, TrackingGate.from_config(cfg), writer, clock=None,
                     fixed_stream_config=stream)
     writer.update_meta(processing=pipe.stream_info, imu={"frequency_selected_hz": 240})
     pipe.process_all(trace.items())
@@ -287,6 +347,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("info", help="connect and print device identity (no streaming)")
     p.add_argument("--pid", type=lambda s: int(s, 0))
 
+    p = sub.add_parser("check-placement", help="stream a few seconds, write nothing, print stillness and tilt")
+    p.add_argument("--pid", type=lambda s: int(s, 0))
+    p.add_argument("--freq", type=int, help="requested IMU frequency in Hz (default from config: 240)")
+    p.add_argument("--seconds", type=float, default=15.0, help="seconds of streaming (default 15)")
+    p.add_argument("--connect-timeout", type=float, default=15.0)
+
     def live_args(p):
         p.add_argument("--pid", type=lambda s: int(s, 0))
         p.add_argument("--mode", choices=["pose", "raw"])
@@ -307,6 +373,8 @@ def build_parser() -> argparse.ArgumentParser:
     live_args(p)
     p.add_argument("--record", action="store_true", help="also record the session")
     p.add_argument("--close-after", type=float, help="close the viewer after S seconds (unattended checks)")
+    p.add_argument("--script", choices=["r6a", "r6b", "r6c", "r7", "r8"],
+                   help="guided bench script (docs/bench-checklist.md): Space for every action, labels automatic")
 
     p = sub.add_parser("replay", help="replay a recorded session without glasses")
     p.add_argument("session")
@@ -317,6 +385,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("analyze", help="timing / jitter / drift report")
     p.add_argument("session")
     p.add_argument("--stationary", action="store_true", help="compute stationary angular metrics")
+    p.add_argument("--reference-rate-hz", type=float,
+                   help="re-check a candidate r_ref: use it for the timing metrics instead of the recorded value")
     p = sub.add_parser("export", help="denormalised per-row export (protocol §10 fields)")
     p.add_argument("session")
     p.add_argument("--out")
@@ -334,7 +404,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         except (AttributeError, ValueError):
             pass
     args = build_parser().parse_args(argv)
-    cmds = {"devices": cmd_devices, "info": cmd_info, "record": lambda a: _live(a, view=False),
+    cmds = {"devices": cmd_devices, "info": cmd_info, "check-placement": cmd_check_placement,
+            "record": lambda a: _live(a, view=False),
             "view": lambda a: _live(a, view=True), "replay": cmd_replay, "analyze": cmd_analyze,
             "export": cmd_export, "synth": cmd_synth}
     return cmds[args.cmd](args)

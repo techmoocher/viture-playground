@@ -50,11 +50,12 @@ Research protocol: [docs/research/](docs/research/).
 |---|---|
 | `headmusic devices` | List glasses and SDK frequency support |
 | `headmusic info` | Identity and firmware (no streaming) |
+| `headmusic check-placement` | ~15 s of streaming, nothing recorded: tilt from upright and how still the glasses are, checked before every bench recording |
 | `headmusic record --duration 60 --mounting fixture --stationary --capture-neutral-at 2` | Headless recording plus report |
-| `headmusic view [--record]` | Live yaw/pitch/roll, tilt from upright (placement aid), neutral capture (`N`), segment marks, tracking-gate status |
+| `headmusic view [--record] [--script r6a\|r6b\|r6c]` | Live yaw/pitch/roll, tilt from upright (placement aid), neutral capture (`N`), segment marks, tracking-gate status; `--script` runs a guided bench script (Space for every action) |
 | `headmusic replay <session> --reprocess` | Offline reprocessing; checks byte-identity with the live output |
 | `headmusic replay <session> --view [--speed 1]` | Replay into the viewer, no glasses needed |
-| `headmusic analyze <session> [--stationary]` | Timing, jitter and drift report (`analysis/report.md`) |
+| `headmusic analyze <session> [--stationary]` | Timing, jitter and drift report, plus per-segment net rotation for the bench checks (`analysis/report.md`) |
 | `headmusic export <session>` | Denormalised per-row export with protocol §10 fields |
 | `headmusic synth <scenario>` | Deterministic synthetic session: stationary, faults, reconnect, sign_flip, yaw_wrap, dropped, sustained_loss |
 

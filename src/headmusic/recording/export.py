@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from headmusic import __version__
-from headmusic.recording.reader import load_meta, read_jsonl
+from headmusic.recording.reader import load_meta, read_jsonl, segments_from_commands
 
 EXPORTER_VERSION = f"headmusic-export/{__version__}"
 
@@ -40,22 +40,6 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _segments(commands: list[dict]) -> list[tuple[int, Optional[int], str]]:
-    """(start_after_seq, end_after_seq or None, label) from segment commands."""
-    out, open_seg = [], None
-    for c in commands:
-        if c["kind"] == "segment_start":
-            if open_seg is not None:
-                out.append((open_seg[0], c["after_seq"], open_seg[1]))
-            open_seg = (c["after_seq"], c["data"].get("label", ""))
-        elif c["kind"] == "segment_end" and open_seg is not None:
-            out.append((open_seg[0], c["after_seq"], open_seg[1]))
-            open_seg = None
-    if open_seg is not None:
-        out.append((open_seg[0], None, open_seg[1]))
-    return out
-
-
 def _trial_for(seq: int, segments) -> str:
     for start, end, label in segments:
         if seq > start and (end is None or seq <= end):
@@ -72,7 +56,7 @@ def export_denormalized(session_dir: Path, out_dir: Optional[Path] = None) -> Pa
     raw_path = session_dir / "raw_pose.csv"
     calib = [r for r in read_jsonl(session_dir / "calibration_neutral.jsonl") if r.get("accepted")]
     q0_by_id = {r["neutral_calibration_id"]: r["q0_wxyz"] for r in calib}
-    segments = _segments(read_jsonl(session_dir / "commands.jsonl"))
+    segments = segments_from_commands(read_jsonl(session_dir / "commands.jsonl"))
 
     dev, imu, prov = meta.get("device", {}), meta.get("imu", {}), meta.get("provenance", {})
     constants = {

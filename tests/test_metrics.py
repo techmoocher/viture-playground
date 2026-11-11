@@ -65,3 +65,47 @@ def test_drift_metric_independent_of_jitter():
     a = stationary_angular(q, d, 5.0, 1.0)
     assert a["apparent_drift"]["slope_deg_per_min"]["y"] == pytest.approx(0.2, rel=0.02)
     assert a["angular_jitter_deg"]["sd_y"] < 1e-3  # float32 rounding only
+
+
+def test_longest_gap_free_stretch():
+    from headmusic.metrics.timing import longest_gap_free_stretch
+    clean = SY.generate(30.0, rate_hz=202.5)
+    d, h, _, seq = arrays(clean)
+    s = longest_gap_free_stretch(d, 1e9 / 202.5, 1.5, 1e6)
+    assert s["n"] == len(clean) and s["start_s"] == 0.0
+    assert s["achieved_rate_device_hz"] == pytest.approx(202.5, rel=1e-3)
+    # one long pause after 10 s: the stretch after it (20 s) is the longest
+    d2 = np.concatenate([d[d < d[0] + 10e9], d[d >= d[0] + 10.3e9]])
+    s2 = longest_gap_free_stretch(d2, 1e9 / 202.5, 1.5, 1e6)
+    assert s2["start_s"] == pytest.approx(10.3, abs=0.01) and s2["duration_s"] == pytest.approx(19.7, abs=0.01)
+    assert timing_report(d2, h[: d2.size], seq[: d2.size], 202.5, 1.5, 1e6)["longest_gap_free_stretch"] == s2
+
+
+def test_report_seq_gaps_ignore_invalid_samples_and_small_angles_print(tmp_path):
+    from headmusic.config import load_config
+    from headmusic.metrics.report import analyze_session
+    from headmusic.orientation.processor import OrientationProcessor, ProcessorConfig
+    from headmusic.pipeline import Pipeline
+    from headmusic.recording.writer import SessionWriter
+    from headmusic.tracking.gate import TrackingGate
+    cfg = load_config()
+    stream = {"selected_hz": 240, "reference_rate_hz": 202.5}
+    meta = {"config": cfg, "processing": dict(stream), "schema_version": "1.1.0", "stationary": True}
+    w = SessionWriter(tmp_path / "s", meta)
+    pipe = Pipeline(cfg, OrientationProcessor(ProcessorConfig.from_config(cfg)), TrackingGate(100_000_000), w,
+                    clock=None, fixed_stream_config=stream)
+    pipe.process_all(SY.scenario_faults().items())  # 6 invalid samples at known positions, no lost samples
+    w.close()
+    rep = analyze_session(tmp_path / "s")
+    t = rep["connections"]["1"]["timing"]
+    assert rep["samples"]["invalid"] == 6 and t["pipeline_seq_gaps"] == 0
+    assert rep["reference_rate_hz"] == {"recorded": 202.5, "used_for_timing": 202.5, "overridden": False}
+    rep2 = analyze_session(tmp_path / "s", reference_rate_hz=200.0)
+    assert rep2["reference_rate_hz"]["overridden"] and rep2["connections"]["1"]["timing"]["gaps"]["reference_interval_ms"] == 5.0
+    md = (tmp_path / "s" / "analysis" / "report.md").read_text(encoding="utf-8")
+    assert "override" in md
+
+
+def test_small_angles_keep_significant_digits():
+    from headmusic.metrics.report import _g
+    assert _g(3.3e-05) == "3.3e-05" and _g(0.000494) == "0.000494" and _g(None) == "—"

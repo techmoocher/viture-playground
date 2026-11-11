@@ -5,8 +5,9 @@ same angles of the absolute tracking-frame quaternion, labelled as such.
 """
 from __future__ import annotations
 
+import time
 import tkinter as tk
-from typing import Callable
+from typing import Callable, Optional
 
 from headmusic.orientation.euler import direction_words, zyx_from_quat
 from headmusic.orientation.quaternion import up_axis_tilt_deg
@@ -25,28 +26,53 @@ def tilt_text(tilt_deg) -> str:
     return text
 
 
+def fit_geometry(screen_w: int, screen_h: int, want_w: int = 1000, want_h: int = 700) -> str:
+    """Window size and position that fit the screen, leaving room for the title bar and the taskbar.
+
+    The viewer once opened at 1000x700 on a 1280x800 screen with a 752 px working area; the control bar at the
+    bottom was off-screen, so no neutral capture or segment could be marked (R6a, 2026-11-11)."""
+    w = max(640, min(want_w, screen_w - 40))
+    h = max(420, min(want_h, screen_h - 140))
+    return f"{w}x{h}+20+10"
+
+
+def command_feedback(segment_label, last_command) -> str:
+    """Text that confirms the operator's last button press in the viewer."""
+    seg = f"segment OPEN: {segment_label}" if segment_label else "no segment open"
+    return f"{seg}  ·  last: {last_command}" if last_command else seg
+
+
 class ViewerApp:
     def __init__(self, pipeline, title: str, on_close: Callable[[], None], window_s: float = 10.0,
-                 refresh_ms: int = 33) -> None:
+                 refresh_ms: int = 33, script=None, clock: Optional[Callable[[], float]] = None) -> None:
         self.p = pipeline
+        self.script = script  # GuidedScript or None (manual controls)
+        self.clock = clock or time.monotonic
         self.on_close = on_close
         self.window_s = window_s
         self.refresh_ms = refresh_ms
         self.root = tk.Tk()
         self.root.title(title)
         self.root.configure(bg=BG)
-        self.root.geometry("1000x700")
+        self.root.geometry(fit_geometry(self.root.winfo_screenwidth(), self.root.winfo_screenheight()))
         self.root.protocol("WM_DELETE_WINDOW", self._close)
+        # Controls first, at the top: widgets packed last are the first to be cut off when the window is
+        # taller than the visible screen area.
+        bar = tk.Frame(self.root, bg=BG)
+        if script is None:
+            bar.pack(fill="x", padx=12, pady=(10, 4))
+        else:  # guided mode: one large instruction panel; the manual controls and the N shortcut are off
+            self.guide = tk.Label(self.root, text="", bg="#1b2733", fg=TEXT, font=("Segoe UI", 14, "bold"),
+                                  anchor="w", justify="left", padx=12, pady=10, wraplength=900)
+            self.guide.pack(fill="x", padx=12, pady=(10, 4))
         top = tk.Frame(self.root, bg=BG)
-        top.pack(fill="x", padx=12, pady=(10, 4))
+        top.pack(fill="x", padx=12, pady=(4, 4))
         self.status = tk.Label(top, text="starting…", bg=BG, fg=TEXT, font=("Segoe UI", 11), anchor="w", justify="left")
         self.status.pack(side="left", fill="x", expand=True)
         self.gate = tk.Label(top, text="", bg=BG, fg=BAD, font=("Segoe UI", 11, "bold"))
         self.gate.pack(side="right")
         self.canvas = tk.Canvas(self.root, bg=BG, highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True, padx=12)
-        bar = tk.Frame(self.root, bg=BG)
-        bar.pack(fill="x", padx=12, pady=8)
+        self.canvas.pack(fill="both", expand=True, padx=12, pady=(0, 8))
         btn = dict(bg="#2a3038", fg=TEXT, activebackground="#3c4450", activeforeground=TEXT, relief="flat",
                    padx=10, pady=4)
         tk.Button(bar, text="Capture neutral  [N]", command=self.capture, **btn).pack(side="left")
@@ -57,26 +83,63 @@ class ViewerApp:
         tk.Button(bar, text="End segment", command=self.seg_end, **btn).pack(side="left")
         self.info = tk.Label(bar, text="", bg=BG, fg=MUTED, anchor="e")
         self.info.pack(side="right")
-        self.root.bind("<Key-n>", lambda e: self.capture() if e.widget is not self.seg_label else None)
+        self.feedback = tk.Label(self.root, text=command_feedback(None, None), bg=BG, fg="#fbbc04",
+                                 font=("Segoe UI", 11, "bold"), anchor="w")
+        self.feedback.pack(fill="x", padx=12, before=top)
+        if script is None:
+            self.root.bind("<Key-n>", lambda e: self.capture() if e.widget is not self.seg_label else None)
+        else:
+            self.root.bind("<space>", lambda e: self.guided_press())
         self.segment_open = False
+        self.open_label = None
+
+    def _feedback(self, last: str) -> None:
+        self.feedback.config(text=command_feedback(self.open_label, last))
 
     # ------------------------------------------------------------------ actions
     def capture(self) -> None:
         self.p.submit_command("capture_neutral", window_s=float(self.p.cfg["neutral"]["window_s"]),
                               tau_stab_deg=float(self.p.cfg["neutral"]["tau_stab_deg"]))
+        self._feedback("neutral capture requested")
 
     def seg_start(self) -> None:
         if self.segment_open:
             self.seg_end()
-        self.p.submit_command("segment_start", label=self.seg_label.get().strip() or "segment")
-        self.segment_open = True
+        label = self.seg_label.get().strip() or "segment"
+        self.p.submit_command("segment_start", label=label)
+        self.segment_open, self.open_label = True, label
+        self._feedback(f"started '{label}'")
 
     def seg_end(self) -> None:
         if self.segment_open:
+            label = self.open_label
             self.p.submit_command("segment_end")
-            self.segment_open = False
+            self.segment_open, self.open_label = False, None
+            self._feedback(f"ended '{label}'")
+
+    def guided_press(self) -> None:
+        self._submit_guided(self.script.press(self.clock()))
+
+    def _submit_guided(self, commands) -> None:
+        for kind, data in commands:
+            if kind == "capture_neutral":
+                self.capture()
+            elif kind == "segment_start":
+                self.p.submit_command("segment_start", **data)
+                self.segment_open, self.open_label = True, data["label"]
+                self._feedback(f"started '{data['label']}'")
+            elif kind == "segment_end":
+                self.seg_end()
+
+    def _guided_refresh(self, last_neutral) -> None:
+        now = self.clock()
+        self.script.observe_neutral(last_neutral)
+        self._submit_guided(self.script.tick(now))
+        self.guide.config(text=self.script.text(now))
 
     def _close(self) -> None:
+        if self.script is not None and self.segment_open:
+            self.seg_end()  # never leave a guided segment open in the recording
         self.on_close()
         self.root.destroy()
 
@@ -116,6 +179,8 @@ class ViewerApp:
                 extra += f"  tilt at capture {ln['q0_tilt_from_upright_deg']:.1f}°"
             lines.append(f"neutral attempt {ln['attempt']}: {outcome}{extra}")
         self.status.config(text="\n".join(lines))
+        if self.script is not None:
+            self._guided_refresh(st.get("last_neutral"))
         self.gate.config(text="TRACKING USABLE" if gate.usable else "NOT USABLE: " + ", ".join(gate.reasons),
                          fg=OK if gate.usable else BAD)
         self.info.config(text="angles are display-only Z-Y′-X″ of head orientation (not neck/cervical angles)")

@@ -43,7 +43,13 @@ Why each comparison point was chosen:
 
 ## Staleness and the tracking gate (consumer side, host clock)
 
-- `stale(now) := now − host_rx(last valid sample) > t_stale_ms` (100 ms). Evaluated on query, never stored on samples. The pipeline logs `stale_begin`/`stale_end` events for diagnostics.
+- `stale(now) := now − produced(last valid sample) > t_stale_ms` (100 ms). This is the **data age**, measured from when the sample was produced, not when it arrived. `produced = device_ts + o_min`, where:
+  - `o = host_rx − device_ts` is the clock offset of each valid sample;
+  - `o_min` is its running minimum on the connection, allowed to rise by at most `offset_drift_ppm` (200 ppm, provisional; G0 measured 12–17 ppm skew) of the elapsed host time.
+  - So data age = arrival age + lateness (`o − o_min`). The baseline resets with each connection, because the device clock restarts on replug. Invalid samples never move it.
+  - **Why:** in G0 R9, after a 30 s PC sleep, a sample produced before the sleep arrived 29.9 s late. An arrival-time rule treated it as fresh; this rule reports it as 29.9 s old.
+  - **Assumption:** the host clock keeps counting during sleep, as QPC did in R9.
+  - Evaluated on query, never stored on samples. The pipeline logs `stale_begin`/`stale_end` events from the same age.
 - `usable_for_control(now) := connected ∧ a valid sample on this connection ∧ last sample valid ∧ ¬stale ∧ neutral accepted`. The reasons reported are `disconnected`, `no_valid_sample`, `last_sample_invalid`, `stale`, `no_neutral`.
 - Any future command-producing module must use `TrackingGate`. **Invalid or stale tracking must never trigger musical commands.** Phase 1 displays and logs the gate only.
 - A new connection invalidates the neutral, so a new capture is required (open item O5 in the proposal).
@@ -76,8 +82,11 @@ never pooled; reports carry the `mounting` label.
 | **Sampling-interval jitter** | Distribution of consecutive intervals (device Δd and host Δh): min, p1, p5, p50, p95, p99, max, mean, SD. Summaries are SD and p99−p1. Device intervals are floored by the 1 ms resolution |
 | **Arrival-time jitter** | Least-squares fit host = a + b·device. Reported: skew (b−1)·10⁶ ppm; residual SD and p99−p1; relative lateness = residual − min(residual). **Relative, not absolute, latency** |
 | Loss | Gap count, longest gap, estimated missing samples; loss fraction = 1 − N/(span·r_ref + 1); pipeline seq gaps; shim ring overflow |
+| Longest gap-free stretch | The longest run of samples (by device time) with no `gap_before` between them, and its achieved device-clock rate. The candidate measurement for `r_ref` (bench-checklist.md, "Deriving r_ref"). It depends on the reference used to find the gaps, so it is re-checked after `r_ref` changes |
 | **Angular jitter** (stationary only) | ref = mean of the first `w_ref_s` (5 s); v(t) = rotation vector of conj(ref) ⊗ q(t) in degrees (sequence-free). Jitter = per-component SD of v minus its centred moving average over `w_jitter_s` (1 s), plus geodesic RMS. Cross-check: RMS of consecutive geodesic steps / √2 |
 | **Apparent drift** (stationary only) | Least-squares slope of each v component and of θ(ref, q) vs device time (°/min); net change between the first and last `w_ref_s` means; maximum excursion. "Apparent" because sensor bias, SDK filter and fixture creep cannot be separated |
+
+**Segment net rotation (bench checks).** For each operator segment, the start and end orientations q_s, q_e are the sign-aligned means of the valid samples in the first and last `segment_window_s` (1 s) of the segment, with each window's maximum dispersion reported. The report gives `P_head = conj(q_s) ⊗ q_e` and `P_track = q_e ⊗ conj(q_s)`: rotation angle, unit axis, the axis angle from the vertical ±Z, and display Euler angles. Which product is the head-frame change depends on the quaternion direction (U1); the bench checklist explains how to read them. Segments that span a reconnection are not compared. Descriptive only; no threshold is applied.
 
 Angular metrics are computed only when the session is declared stationary (`record --stationary` or `analyze --stationary`).
 The declaration must reflect a setup the operator confirmed. A worn recording includes natural head movement.

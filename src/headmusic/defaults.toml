@@ -27,19 +27,30 @@ tau_norm = 1e-3                # |‖q‖ − 1| above this sets norm_deviation 
 eps_zero = 1e-6                # ‖q‖ below this sets zero_norm (invalidating)
 euler_singular_deg = 89.0      # |display pitch| above this sets euler_near_singular (numeric guard)
 
-# Fixture-measured achieved rates (Hz) for the VITURE Pro (PID 0x101D), keyed by selected frequency.
-# Source: read-only probe 2026-11-10 (docs/phase1-proposal.md §3.5). Replace with bench-report values.
+# Fixture-measured achieved rates (Hz) for the VITURE Pro (PID 0x101D), keyed by selected frequency: the
+# achieved device-clock rate over the longest gap-free stretch of an approved stationary fixture run
+# (docs/bench-checklist.md, "Deriving r_ref"). Frequencies without an entry use the adaptive reference.
+# 240: 202.483 from G0 run R2, session 710efe0c (2026-11-11 UTC), stretch 600.2 s, re-checked with this
+#      value (0 gaps). The earlier preliminary value was 202.5 (probe of unknown placement).
+# 60:  59.435 from G0 run R3, session 0fd7c040 (2026-11-11 UTC), stretch 300.2 s, re-checked (0 gaps).
+# 90:  84.613 from G0 run R4, session 98addf22 (2026-11-11 UTC), stretch 300.2 s, re-checked (0 gaps).
+# 120: 112.342 from G0 run R5, session bcf348a3 (2026-11-11 UTC), stretch 300.2 s, re-checked (0 gaps).
 [flags.r_ref_hz.pose]
-"240" = 202.5
+"60" = 59.435
+"90" = 84.613
+"120" = 112.342
+"240" = 202.483
 
 [flags.r_ref_hz.raw]
 
 [gate]
-t_stale_ms = 100               # stream is stale if no valid sample arrived for longer than this (host clock)
+t_stale_ms = 100               # stale if the last valid sample was produced longer ago than this (host clock)
+offset_drift_ppm = 200.0       # how fast the clock-offset baseline may rise (G0 measured 12-17 ppm skew); provisional
 
 [metrics]
 w_ref_s = 5.0                  # stationary reference window (first W_ref seconds)
 w_jitter_s = 1.0               # centred moving-average width used to detrend angular jitter
+segment_window_s = 1.0         # bench segments: start/end orientation = mean of the first/last window
 
 [io]
 flush_interval_s = 1.0         # files are flushed at least this often (max data lost on a crash)
