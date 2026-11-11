@@ -36,6 +36,10 @@ def placement_summary(items: Iterable[object], cfg: dict) -> dict:
     valid = [r for r in rows if r.valid and r.quat is not None]
     out: dict = {"n_samples": len(rows), "n_valid": len(valid), "n_invalid": len(rows) - len(valid),
                  "n_gaps": sum(1 for r in rows if GAP_BEFORE in r.flags), "n_connections": len(connections)}
+    if rows:
+        d0 = rows[0].device_ts_raw
+        out["gaps"] = [{"at_s": (r.device_ts_raw - d0) / 1e9, "interval_ms": (r.dt_device_ns or 0) / 1e6,
+                        "est_missing": r.gap_est_missing} for r in rows if GAP_BEFORE in r.flags]
     if len(valid) < 2:
         out["error"] = "too few valid samples"
         return out
@@ -67,6 +71,8 @@ def format_summary(s: dict) -> str:
              f"  deviation from the mean orientation: max {s['deviation_max_deg']:.3f}°, RMS {s['deviation_rms_deg']:.3f}°",
              f"  change between the first and the last second: {s['change_first_to_last_second_deg']:.3f}°",
              f"  ({REFERENCE_NOTE})"]
+    for g in s.get("gaps", [])[:5]:
+        lines.append(f"  gap at {g['at_s']:.2f} s: {g['interval_ms']:.0f} ms interval, ~{g['est_missing']} samples missing")
     if s["n_connections"] > 1:
         lines.append("  the device reconnected during the check")
     return "\n".join(lines)

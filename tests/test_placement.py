@@ -46,3 +46,12 @@ def test_too_few_samples(cfg):
 def test_cli_has_check_placement():
     a = build_parser().parse_args(["check-placement", "--seconds", "10"])
     assert a.cmd == "check-placement" and a.seconds == 10.0
+
+
+def test_gaps_are_located(cfg):
+    samples = SY.generate(10.0, orientation=lambda t: quat_from_zyx(0.0, 5.0, 0.0))
+    kept = SY.resequence([x for x in samples if not (600 <= x.seq < 720)])  # ~0.6 s missing after ~3 s
+    s = placement_summary([connected(), *kept], cfg)
+    (g,) = s["gaps"]
+    assert g["at_s"] == pytest.approx(720 / 202.5, abs=0.01) and g["est_missing"] == pytest.approx(120, abs=1)
+    assert "gap at 3.56 s" in format_summary(s)
