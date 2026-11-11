@@ -5,7 +5,8 @@
    not part of it; if the capture is accepted, the new neutral applies from that sample on.
 2. Acceptance requires: (a) every window sample valid, (b) no gap_before inside the window,
    (c) no connection change during the capture, (d) dispersion max_i θ(q_i, q0) <= tau_stab_deg.
-3. q0 = normalised sign-aligned mean of the window quaternions. RMS dispersion is also logged.
+3. q0 = normalised sign-aligned mean of the window quaternions. RMS dispersion is also logged, as is
+   the tilt of q0 from upright (descriptive only; it does not affect acceptance).
 4. Retries are unlimited and operator-initiated; every attempt produces one record.
 All thresholds are provisional engineering defaults, not validated limits.
 """
@@ -16,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from headmusic.orientation import flags as F
-from headmusic.orientation.quaternion import angle_deg, mean_sign_aligned
+from headmusic.orientation.quaternion import angle_deg, mean_sign_aligned, up_axis_tilt_deg
 from headmusic.types import Quat
 
 
@@ -145,6 +146,8 @@ class NeutralCapture:
             "n_invalid": c.n_invalid,
             "n_gaps": c.n_gaps,
             "q0_wxyz": list(q0) if q0 is not None else None,
+            # Descriptive only (no effect on acceptance): 0° upright, ~180° upside down.
+            "q0_tilt_from_upright_deg": up_axis_tilt_deg(q0) if q0 is not None else None,
             "dispersion_max_deg": d_max,
             "dispersion_rms_deg": d_rms,
             "accepted": accepted,

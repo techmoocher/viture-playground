@@ -9,9 +9,20 @@ import tkinter as tk
 from typing import Callable
 
 from headmusic.orientation.euler import direction_words, zyx_from_quat
+from headmusic.orientation.quaternion import up_axis_tilt_deg
 
 COLORS = {"yaw": "#1f77b4", "pitch": "#2ca02c", "roll": "#d62728"}
 BG, GRID, TEXT, MUTED, OK, BAD = "#111418", "#2a3038", "#e8eaed", "#9aa0a6", "#34a853", "#ea4335"
+
+
+def tilt_text(tilt_deg) -> str:
+    """Display-only description of the glasses' tilt from upright (no threshold is applied anywhere)."""
+    if tilt_deg is None:
+        return "tilt from upright: —"
+    text = f"tilt from upright: {tilt_deg:5.1f}°  (0° upright, 180° upside down; display only)"
+    if tilt_deg > 90.0:  # geometric fact, not a limit: the up axis points below the horizontal plane
+        text += "  ⚠ up axis points below horizontal: upside down?"
+    return text
 
 
 class ViewerApp:
@@ -92,11 +103,18 @@ class ViewerApp:
             f"samples {st['pose_samples']}  valid {st['valid']}  invalid {st['invalid']}  gaps {st['gaps']} "
             f"(≈{st['est_missing']} missing)  ·  queue max {st['max_queue']}",
         ]
+        last_q = next((p.quat for p in reversed(hist) if p.quat is not None), None)
+        lines.append(tilt_text(up_axis_tilt_deg(last_q) if last_q is not None else None))
         ln = st.get("last_neutral")
         if ln:
-            lines.append(f"neutral attempt {ln['attempt']}: {'ACCEPTED id ' + str(ln['neutral_calibration_id']) if ln['accepted'] else 'REJECTED ' + ', '.join(ln['reasons'])}"
-                         f"  dispersion max {ln['dispersion_max_deg']:.3f}°" if ln.get("dispersion_max_deg") is not None
-                         else f"neutral attempt {ln['attempt']}: REJECTED {', '.join(ln['reasons'])}")
+            outcome = (f"ACCEPTED id {ln['neutral_calibration_id']}" if ln["accepted"]
+                       else "REJECTED " + ", ".join(ln["reasons"]))
+            extra = ""
+            if ln.get("dispersion_max_deg") is not None:
+                extra += f"  dispersion max {ln['dispersion_max_deg']:.3f}°"
+            if ln.get("q0_tilt_from_upright_deg") is not None:
+                extra += f"  tilt at capture {ln['q0_tilt_from_upright_deg']:.1f}°"
+            lines.append(f"neutral attempt {ln['attempt']}: {outcome}{extra}")
         self.status.config(text="\n".join(lines))
         self.gate.config(text="TRACKING USABLE" if gate.usable else "NOT USABLE: " + ", ".join(gate.reasons),
                          fg=OK if gate.usable else BAD)

@@ -51,7 +51,7 @@ Research protocol: [docs/research/](docs/research/).
 | `headmusic devices` | List glasses and SDK frequency support |
 | `headmusic info` | Identity and firmware (no streaming) |
 | `headmusic record --duration 60 --mounting fixture --stationary --capture-neutral-at 2` | Headless recording plus report |
-| `headmusic view [--record]` | Live yaw/pitch/roll, neutral capture (`N`), segment marks, tracking-gate status |
+| `headmusic view [--record]` | Live yaw/pitch/roll, tilt from upright (placement aid), neutral capture (`N`), segment marks, tracking-gate status |
 | `headmusic replay <session> --reprocess` | Offline reprocessing; checks byte-identity with the live output |
 | `headmusic replay <session> --view [--speed 1]` | Replay into the viewer, no glasses needed |
 | `headmusic analyze <session> [--stationary]` | Timing, jitter and drift report (`analysis/report.md`) |

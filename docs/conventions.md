@@ -27,6 +27,7 @@ Do **not** use anatomical terms (flexion, extension, lateral bending, axial rota
 | `quat_rel` | Canonical `w ≥ 0` |
 | Angular distance | `θ(a, b) = 2·atan2(‖vec(conj(a) ⊗ b)‖, |w|)`, sign-invariant and accurate for small angles |
 | Mean (neutral `q0`) | Normalised arithmetic mean after aligning signs to the first sample. With the dispersion bounded by the stability check, this differs from the Markley eigenvector mean only at second order |
+| Tilt from upright | `acos(clamp(1 − 2(x² + y²)))`: the angle between the glasses' up axis (H +Z rotated into W) and W's up axis. 0° = upright, 90° = up axis horizontal, 180° = upside down. It is identical for q, −q and conj(q), so it does **not** depend on the unverified quaternion direction (U1). It relies only on H +Z being the glasses' up axis (G0 check) and W +Z being up (SDK NWU). **Descriptive only:** shown live in the viewer and stored with each neutral capture; nothing is accepted or rejected on it. Real upside-down samples on 2026-11-10 gave about 170° |
 
 ## Display Euler angles (exact conversion)
 

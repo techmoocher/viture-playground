@@ -38,6 +38,21 @@ def test_accepted_capture_applies_from_closing_sample(make_processor):
     assert Q.angle_deg(applied.quat_rel, Q.IDENTITY) < 1e-5  # float32 input precision
 
 
+@pytest.mark.parametrize("pitch,expected_tilt", [(0.0, 0.0), (25.0, 25.0), (-172.0, 172.0)])
+def test_capture_records_tilt_without_affecting_acceptance(make_processor, pitch, expected_tilt):
+    s = SY.generate(4.0, orientation=lambda t: quat_from_zyx(-100.0, pitch, 0.0))
+    _, recs = feed(make_processor(), [SY.capture_command(-1, window_s=1.0), *s])
+    assert recs[0]["accepted"] is True  # an upside-down neutral is still accepted: tilt is descriptive
+    assert recs[0]["q0_tilt_from_upright_deg"] == pytest.approx(expected_tilt, abs=1e-3)
+
+
+def test_rejected_capture_without_q0_has_no_tilt(make_processor):
+    s = SY.generate(3.0)
+    s = [SY.with_values(x, (*x.values[:3], float("nan"), *x.values[4:])) for x in s]
+    _, recs = feed(make_processor(), [SY.capture_command(-1, window_s=1.0), *s])
+    assert recs[0]["q0_tilt_from_upright_deg"] is None
+
+
 def test_raw_values_untouched_by_recentering(make_processor):
     s = SY.generate(3.0, orientation=lambda t: quat_from_zyx(40, 0, 0))
     before = [x.values for x in s]

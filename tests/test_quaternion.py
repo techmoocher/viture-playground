@@ -60,6 +60,33 @@ def test_rotvec_round_trip():
         assert close(back, r, 1e-9)
 
 
+@pytest.mark.parametrize("axis,angle,expected", [
+    ((0, 0, 1), 0.0, 0.0), ((0, 0, 1), 137.0, 0.0),        # yaw never tilts the up axis
+    ((0, 1, 0), 30.0, 30.0), ((1, 0, 0), -30.0, 30.0),      # pitch or roll tilt it
+    ((0, 1, 0), 180.0, 180.0), ((1, 0, 0), 180.0, 180.0),   # upside down
+    ((0, 1, 0), 90.0, 90.0),
+])
+def test_up_axis_tilt(axis, angle, expected):
+    assert Q.up_axis_tilt_deg(Q.from_axis_angle(axis, angle)) == pytest.approx(expected, abs=1e-9)
+
+
+def test_up_axis_tilt_independent_of_direction_and_sign():
+    rng = random.Random(3)
+    for _ in range(200):
+        q = Q.normalize([rng.gauss(0, 1) for _ in range(4)])
+        t = Q.up_axis_tilt_deg(q)
+        assert Q.up_axis_tilt_deg(Q.conj(q)) == pytest.approx(t, abs=1e-9)
+        assert Q.up_axis_tilt_deg(Q.neg(q)) == pytest.approx(t, abs=1e-9)
+        up = Q.rotate(q, (0, 0, 1))
+        assert t == pytest.approx(math.degrees(math.acos(max(-1.0, min(1.0, up[2])))), abs=1e-7)
+
+
+def test_up_axis_tilt_of_real_upside_down_sample():
+    # First SDK quaternion of the 2026-11-10 probe (glasses lying upside down on the table)
+    q = (0.04515858, -0.90442407, -0.41421568, -0.09166938)
+    assert 165.0 < Q.up_axis_tilt_deg(q) < 175.0
+
+
 def test_mean_handles_mixed_signs():
     base = Q.from_axis_angle((0, 0, 1), 40)
     qs = [Q.mul(base, Q.from_axis_angle((1, 0, 0), d)) for d in (-0.5, 0.0, 0.5)]

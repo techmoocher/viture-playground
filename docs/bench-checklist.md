@@ -13,6 +13,9 @@ Close VITURE's own apps first.
 - **Never lying upside down or folded on the table.** Earlier unannounced runs were upside down; the SDK then reported
   pitch ≈ −170°, which is not representative of use.
 - Neutral captures (`--capture-neutral-at`, or `N` in the viewer) happen only after the operator confirms this placement.
+- Cross-check: with the glasses upright on the stand, the viewer's **tilt from upright** readout should be near 0°. A value far
+  above 90° means they are upside down. The readout is a placement aid only, and the recorded `q0_tilt_from_upright_deg`
+  documents each capture.
 - Do not touch or move the glasses during a stationary recording. If they are moved, say so, and the run is re-labelled or discarded.
 
 | # | Step | Setup the operator confirms | Command (example) | Pass / record |

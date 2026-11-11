@@ -1,4 +1,8 @@
-# Data format (schema 1.0.0)
+# Data format (schema 1.1.0)
+
+Schema changes:
+- **1.1.0:** `calibration_neutral.jsonl` records gain `q0_tilt_from_upright_deg`. Additive; older readers ignore it.
+- **1.0.0:** initial schema.
 
 One directory per session: `data/sessions/<UTC>_<condition>_<mounting>_<id8>/`. All of `data/` is git-ignored.
 
@@ -10,7 +14,7 @@ One directory per session: `data/sessions/<UTC>_<condition>_<mounting>_<id8>/`. 
 | `processed_pose.csv` | Derived values; regenerable from raw by `replay --reprocess` |
 | `events.jsonl` | Stream and device events: `kind`, `host_monotonic_ns`, `last_seq`, `data` |
 | `commands.jsonl` | Operator commands: `kind`, `after_seq`, `host_monotonic_ns`, `data`. Replay re-injects them after `after_seq` |
-| `calibration_neutral.jsonl` | One record per neutral-capture attempt |
+| `calibration_neutral.jsonl` | One record per neutral-capture attempt: window, counts, `q0_wxyz`, dispersion max and RMS, `q0_tilt_from_upright_deg` (descriptive), accepted, reasons, `neutral_calibration_id`, `applies_from_seq` |
 | `sdk_log.txt` | SDK log hook output (level 1 = errors), host timestamped |
 | `analysis/` | `report.json`, `report.md` |
 | `export/` | Denormalised export and its manifest |

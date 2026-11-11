@@ -71,7 +71,8 @@ def analyze_session(session_dir: Path, stationary: Optional[bool] = None) -> dic
                                      for i, n in enumerate(names)}}
     calib = read_jsonl(session_dir / "calibration_neutral.jsonl")
     report["neutral_captures"] = [{k: c.get(k) for k in ("attempt", "accepted", "reasons", "dispersion_max_deg",
-                                                         "dispersion_rms_deg", "n_samples", "neutral_calibration_id")}
+                                                         "dispersion_rms_deg", "n_samples", "neutral_calibration_id",
+                                                         "q0_tilt_from_upright_deg")}
                                   for c in calib]
     events = read_jsonl(session_dir / "events.jsonl")
     report["events"] = {k: sum(1 for e in events if e["kind"] == k) for k in sorted({e["kind"] for e in events})}
@@ -122,10 +123,13 @@ def to_markdown(r: dict) -> str:
                       "", f"Net change {_f(d['net_change_deg'], 4)}°, max excursion {_f(d['max_excursion_deg'], 4)}°, "
                           f"first-difference jitter estimate {_f(j['first_difference_estimate'], 4)}°.", ""]
     if r.get("neutral_captures"):
-        L += ["## Neutral captures", "", "| attempt | accepted | reasons | max disp. (°) | RMS (°) | n |", "|---|---|---|---|---|---|"]
+        L += ["## Neutral captures", "",
+              "| attempt | accepted | reasons | max disp. (°) | RMS (°) | n | tilt from upright at q0 (°) |",
+              "|---|---|---|---|---|---|---|"]
         for c in r["neutral_captures"]:
             L.append(f"| {c['attempt']} | {c['accepted']} | {', '.join(c['reasons'] or [])} | "
-                     f"{_f(c['dispersion_max_deg'], 4)} | {_f(c['dispersion_rms_deg'], 4)} | {c['n_samples']} |")
-        L.append("")
+                     f"{_f(c['dispersion_max_deg'], 4)} | {_f(c['dispersion_rms_deg'], 4)} | {c['n_samples']} | "
+                     f"{_f(c.get('q0_tilt_from_upright_deg'), 1)} |")
+        L += ["", "Tilt is descriptive only (0° upright, 180° upside down); it does not affect acceptance.", ""]
     L += [f"Events: {r.get('events')}", "", f"Shim stats: {r.get('shim_stats')}", ""]
     return "\n".join(L)

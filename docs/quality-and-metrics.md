@@ -60,7 +60,10 @@ Why each comparison point was chosen:
    `tau_stab_deg` is set to 2.0° as a **placeholder**, to be chosen from bench data (O6). It is not a statement about human stillness.
 3. If accepted, `q0` = the sign-aligned mean, and the neutral applies from the first sample after the window (`applies_from_seq`).
 4. Every attempt, accepted or rejected (with reasons, `n`, max and RMS dispersion), is written to `calibration_neutral.jsonl`. Retries are unlimited and operator-initiated. A request during an active capture is rejected with `capture_in_progress`.
-5. Parameters given in a command (the viewer and CLI always send them) are recorded and take precedence on replay.
+5. Each record also stores **`q0_tilt_from_upright_deg`**, the tilt of `q0` from upright (see conventions.md). It is **descriptive only**: it is not an acceptance criterion and no threshold is applied, so an upside-down neutral is still accepted if criteria (a)–(d) hold. The viewer shows the live tilt and adds a hint when the up axis points below the horizontal (tilt > 90°, a geometric fact, not a limit). This makes an upside-down placement visible to the operator. Whether tilt should ever gate a neutral capture is a research-team decision.
+   For a **rejected** capture, `q0_wxyz` and its tilt describe the average of a window that failed the checks, so they are diagnostics only.
+   Example: the 2026-11-10 viewer run's window spanned the pickup and recorded a tilt of 111.5°, while the glasses had been at about 172°.
+6. Parameters given in a command (the viewer and CLI always send them) are recorded and take precedence on replay.
 
 ## Metrics (`headmusic analyze`)
 

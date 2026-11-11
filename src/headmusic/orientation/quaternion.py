@@ -85,6 +85,20 @@ def rotate(q: Sequence[float], v: Sequence[float]) -> tuple[float, float, float]
     return (p[1], p[2], p[3])
 
 
+def up_axis_tilt_deg(q: Sequence[float]) -> float:
+    """Tilt from upright: angle between the glasses' up axis (head-frame +Z rotated into the
+    tracking frame) and the tracking frame's up axis (+Z, NWU), in degrees [0, 180].
+
+    0° = upright, 90° = up axis horizontal, 180° = upside down. The value only depends on the
+    (3,3) element of the rotation matrix, 1 − 2(x² + y²), which is the same for q, −q and conj(q).
+    So it does not depend on the unverified quaternion direction (head→world vs world→head).
+    Descriptive only: nothing is accepted or rejected on this value."""
+    w, x, y, z = normalize(q)
+    c = 1.0 - 2.0 * (x * x + y * y)
+    c = 1.0 if c > 1.0 else (-1.0 if c < -1.0 else c)
+    return math.degrees(math.acos(c))
+
+
 def to_rotvec_deg(q: Sequence[float]) -> tuple[float, float, float]:
     """Rotation vector (axis × angle, degrees) of the rotation q; sequence-free parameterisation."""
     w, x, y, z = canonical(q)
