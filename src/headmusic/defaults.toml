@@ -40,6 +40,7 @@ t_stale_ms = 100               # stream is stale if no valid sample arrived for 
 [metrics]
 w_ref_s = 5.0                  # stationary reference window (first W_ref seconds)
 w_jitter_s = 1.0               # centred moving-average width used to detrend angular jitter
+segment_window_s = 1.0         # bench segments: start/end orientation = mean of the first/last window
 
 [io]
 flush_interval_s = 1.0         # files are flushed at least this often (max data lost on a crash)

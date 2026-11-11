@@ -8,6 +8,9 @@ Definitions (docs/quality-and-metrics.md §Metrics) — computed independently o
   of residuals; relative lateness = residual − min(residual). This is relative, not absolute,
   latency (there is no shared clock);
 - loss: gap count, longest gap, estimated missing samples, loss fraction vs a reference rate.
+- longest gap-free stretch: the longest run of samples with no gap between them (device time),
+  with its achieved rate. This is the candidate measurement for the reference rate r_ref; it
+  depends on the reference used to detect the gaps, so it is re-checked after r_ref changes.
 """
 from __future__ import annotations
 
@@ -49,9 +52,29 @@ def clock_relation(device_ns: np.ndarray, host_ns: np.ndarray) -> dict:
             "note": "relative latency only: residual of host arrival vs a linear fit of the device clock"}
 
 
-def gaps(device_ns: np.ndarray, reference_interval_ns: float, k_gap: float, ts_resolution_ns: float) -> dict:
+def _gap_mask(device_ns: np.ndarray, reference_interval_ns: float, k_gap: float, ts_resolution_ns: float):
     iv = np.diff(device_ns.astype(np.int64))
-    g = iv > (k_gap * reference_interval_ns + ts_resolution_ns)
+    return iv, iv > (k_gap * reference_interval_ns + ts_resolution_ns)
+
+
+def longest_gap_free_stretch(device_ns: np.ndarray, reference_interval_ns: float, k_gap: float,
+                             ts_resolution_ns: float) -> dict:
+    """Longest run (by device time) of consecutive samples without a gap between them."""
+    if device_ns.size < 2:
+        return {}
+    _, g = _gap_mask(device_ns, reference_interval_ns, k_gap, ts_resolution_ns)
+    cuts = np.flatnonzero(g)
+    starts = np.concatenate([[0], cuts + 1])
+    ends = np.concatenate([cuts, [device_ns.size - 1]])
+    spans = device_ns[ends] - device_ns[starts]
+    k = int(np.argmax(spans))
+    a, b = int(starts[k]), int(ends[k])
+    return {"start_s": float((device_ns[a] - device_ns[0]) / 1e9), "duration_s": float(spans[k] / 1e9),
+            "n": b - a + 1, "achieved_rate_device_hz": achieved_rate_hz(device_ns[a:b + 1])}
+
+
+def gaps(device_ns: np.ndarray, reference_interval_ns: float, k_gap: float, ts_resolution_ns: float) -> dict:
+    iv, g = _gap_mask(device_ns, reference_interval_ns, k_gap, ts_resolution_ns)
     missing = np.maximum(np.round(iv[g] / reference_interval_ns) - 1, 0)
     return {"reference_interval_ms": reference_interval_ns / 1e6, "count": int(g.sum()),
             "longest_ms": float(iv[g].max() / 1e6) if g.any() else 0.0, "est_missing": int(missing.sum())}
@@ -73,6 +96,7 @@ def timing_report(device_ns: np.ndarray, host_ns: np.ndarray, seq: np.ndarray, r
     if ref:
         out["gaps"] = gaps(device_ns, 1e9 / ref, k_gap, ts_resolution_ns)
         out["gaps"]["reference_source"] = "measured r_ref" if reference_rate_hz else "this recording's achieved rate"
+        out["longest_gap_free_stretch"] = longest_gap_free_stretch(device_ns, 1e9 / ref, k_gap, ts_resolution_ns)
         span = (device_ns[-1] - device_ns[0]) / 1e9 if device_ns.size > 1 else 0
         expected = span * ref + 1
         out["loss_fraction"] = float(max(0.0, 1.0 - device_ns.size / expected)) if expected > 0 else None

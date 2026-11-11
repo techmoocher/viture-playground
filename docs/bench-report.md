@@ -31,10 +31,23 @@ Lessons for the approved runs:
   on a rigid stand, never upside down.
 - **No automatic neutral capture** unless the operator has confirmed that placement.
 
+## Offline look at existing data (2026-11-10, preliminary)
+
+From the viewer session above, which is mislabelled and only partly on the table. These are observations to check in the approved runs, not results.
+
+- **Duplicate timestamps are separate samples, not repeats.** There were 2 duplicates in 6020 samples (seq 1173 and 5710).
+  - In both, the quaternion values differ from the previous sample, which arrived about 1 ms earlier on the host clock.
+  - The intervals before and after are normal (4–5 ms), so the device delivered one extra sample inside the same millisecond.
+  - They are still flagged `ts_duplicate` (invalidating), which is conservative. Whether to keep that is a question for step 2–3 data.
+- **Device intervals at 240 Hz requested:** 4 ms (492), 5 ms (5415) and 6 ms (109), plus the one 297 ms pause at the pickup.
+
 ## Software checks that need no hardware conditions
 
-- 107 unit tests pass (no glasses): math, flags, neutral capture, gate, recording round trip, replay byte-identity on 5
-  synthetic scenarios, export reproducibility, metric recovery, module boundaries, SDK prototypes vs headers, and the shim.
+- The unit tests pass without glasses (107 at the first commit; the count grows with the code). They cover:
+  - math, flags, neutral capture, the gate and the recording round trip;
+  - replay byte-identity on 5 synthetic scenarios and export reproducibility;
+  - metric recovery, module boundaries, SDK prototypes vs headers, and the shim;
+  - for G0, the segment report recovering yaw, pitch and roll signs, and telling the two quaternion readings apart (U1) in both bench procedures.
 - On real data, live and replayed processed output are byte-identical (10 s, 60 Hz session, including a real `ts_duplicate`).
 - In the viewer run, the processing behaved as designed:
   - the gap was flagged;
@@ -44,4 +57,6 @@ Lessons for the approved runs:
 
 ## To do (each run only after the operator approves it)
 
-Checklist steps 1–13. Then replace the `[flags.r_ref_hz.pose]` defaults with the fixture-measured rates.
+Runs R1–R12 of the run plan in [bench-checklist.md](bench-checklist.md), covering steps 1–13. Then replace the
+`[flags.r_ref_hz.pose]` defaults with the fixture-measured rates, following "Deriving r_ref". The preliminary
+values in this report stay as they are, for comparison.

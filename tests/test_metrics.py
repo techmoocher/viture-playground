@@ -65,3 +65,17 @@ def test_drift_metric_independent_of_jitter():
     a = stationary_angular(q, d, 5.0, 1.0)
     assert a["apparent_drift"]["slope_deg_per_min"]["y"] == pytest.approx(0.2, rel=0.02)
     assert a["angular_jitter_deg"]["sd_y"] < 1e-3  # float32 rounding only
+
+
+def test_longest_gap_free_stretch():
+    from headmusic.metrics.timing import longest_gap_free_stretch
+    clean = SY.generate(30.0, rate_hz=202.5)
+    d, h, _, seq = arrays(clean)
+    s = longest_gap_free_stretch(d, 1e9 / 202.5, 1.5, 1e6)
+    assert s["n"] == len(clean) and s["start_s"] == 0.0
+    assert s["achieved_rate_device_hz"] == pytest.approx(202.5, rel=1e-3)
+    # one long pause after 10 s: the stretch after it (20 s) is the longest
+    d2 = np.concatenate([d[d < d[0] + 10e9], d[d >= d[0] + 10.3e9]])
+    s2 = longest_gap_free_stretch(d2, 1e9 / 202.5, 1.5, 1e6)
+    assert s2["start_s"] == pytest.approx(10.3, abs=0.01) and s2["duration_s"] == pytest.approx(19.7, abs=0.01)
+    assert timing_report(d2, h[: d2.size], seq[: d2.size], 202.5, 1.5, 1e6)["longest_gap_free_stretch"] == s2

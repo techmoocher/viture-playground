@@ -31,6 +31,25 @@ def read_jsonl(path: Path) -> list[dict]:
     return out
 
 
+def segments_from_commands(commands: list[dict]) -> list[tuple[int, Optional[int], str]]:
+    """(start_after_seq, end_after_seq or None, label) from segment commands.
+
+    A sample with sequence number s belongs to a segment if start_after_seq < s <= end_after_seq
+    (open-ended if the end is None). A new segment_start closes the previous segment."""
+    out, open_seg = [], None
+    for c in commands:
+        if c["kind"] == "segment_start":
+            if open_seg is not None:
+                out.append((open_seg[0], c["after_seq"], open_seg[1]))
+            open_seg = (c["after_seq"], c["data"].get("label", ""))
+        elif c["kind"] == "segment_end" and open_seg is not None:
+            out.append((open_seg[0], c["after_seq"], open_seg[1]))
+            open_seg = None
+    if open_seg is not None:
+        out.append((open_seg[0], None, open_seg[1]))
+    return out
+
+
 def _rows(path: Path) -> Iterator[list[str]]:
     with Path(path).open(newline="", encoding="utf-8") as f:
         r = csv.reader(f)

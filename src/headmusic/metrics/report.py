@@ -8,6 +8,7 @@ from typing import Optional
 import numpy as np
 
 from headmusic.metrics.angular import stationary_angular
+from headmusic.metrics import segments as SEG
 from headmusic.metrics.timing import timing_report
 from headmusic.recording.reader import iter_processed, iter_raw_imu, load_meta, read_jsonl
 
@@ -55,6 +56,9 @@ def analyze_session(session_dir: Path, stationary: Optional[bool] = None) -> dic
                 entry["stationary_angular"]["mounting"] = meta.get("mounting")
             per_conn[str(cid)] = entry
         report["connections"] = per_conn
+        commands = read_jsonl(session_dir / "commands.jsonl")
+        seg_window = float(cfg.get("metrics", {}).get("segment_window_s", 1.0))
+        report["segments"] = SEG.segment_report(rows, commands, seg_window)
     imu_path = session_dir / "raw_imu.csv"
     if imu_path.exists():
         rows = list(iter_raw_imu(imu_path))
@@ -109,6 +113,7 @@ def to_markdown(r: dict) -> str:
               f"| relative lateness p99 / max | {_f(t['clock_relation'].get('relative_lateness_ms', {}).get('p99'))} / {_f(t['clock_relation'].get('relative_lateness_ms', {}).get('max'))} ms |",
               f"| gaps / est. missing | {t.get('gaps', {}).get('count')} / {t.get('gaps', {}).get('est_missing')} ({t.get('gaps', {}).get('reference_source')}) |",
               f"| loss fraction | {_f(t.get('loss_fraction'), 4)} |",
+              f"| longest gap-free stretch: rate / duration | {_f(t.get('longest_gap_free_stretch', {}).get('achieved_rate_device_hz'))} Hz / {_f(t.get('longest_gap_free_stretch', {}).get('duration_s'), 1)} s |",
               f"| pipeline seq gaps | {t['pipeline_seq_gaps']} |", ""]
         if "stationary_angular" in c:
             a = c["stationary_angular"]
@@ -122,6 +127,7 @@ def to_markdown(r: dict) -> str:
                       f"| apparent drift (°/min) | {_f(d['slope_deg_per_min']['x'], 4)} | {_f(d['slope_deg_per_min']['y'], 4)} | {_f(d['slope_deg_per_min']['z'], 4)} | {_f(d['slope_deg_per_min']['geodesic'], 4)} |",
                       "", f"Net change {_f(d['net_change_deg'], 4)}°, max excursion {_f(d['max_excursion_deg'], 4)}°, "
                           f"first-difference jitter estimate {_f(j['first_difference_estimate'], 4)}°.", ""]
+    L += SEG.to_markdown(r.get("segments", []))
     if r.get("neutral_captures"):
         L += ["## Neutral captures", "",
               "| attempt | accepted | reasons | max disp. (°) | RMS (°) | n | tilt from upright at q0 (°) |",
