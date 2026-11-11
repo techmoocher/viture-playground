@@ -1,4 +1,4 @@
-"""Command-line interface: headmusic devices | info | record | view | replay | analyze | export | synth."""
+"""Command-line interface: headmusic devices | info | check-placement | record | view | replay | analyze | export | synth."""
 from __future__ import annotations
 
 import argparse
@@ -84,6 +84,58 @@ def cmd_info(args) -> int:
             sdk.stop(h)
             sdk.shutdown(h)
             sdk.destroy(h)
+
+
+# --------------------------------------------------------------------------- placement check
+def cmd_check_placement(args) -> int:
+    """Stream for a few seconds without writing anything; print stillness and tilt for the operator."""
+    from headmusic.acquisition.capture_shim import CaptureShim
+    from headmusic.acquisition.viture_source import VitureSdkSource
+    from headmusic.metrics.placement import format_summary, placement_summary
+    from headmusic.types import RawPoseSample
+    cfg = _cfg(args)
+    if cfg["imu"]["mode"] != "pose":
+        print("check-placement uses pose mode", file=sys.stderr)
+        return 2
+    sdk = _sdk(args)
+    shim = CaptureShim(args.shim)
+    items: list = []
+    lock = threading.Lock()
+    count = [0]
+
+    def sink(x) -> None:
+        with lock:
+            items.append(x)
+            if isinstance(x, RawPoseSample):
+                count[0] += 1
+
+    source = VitureSdkSource(sdk, shim, cfg, sink, time.perf_counter_ns, pid=args.pid)
+    source.start()
+    t_start, t_stream = time.monotonic(), None
+    try:
+        while True:
+            time.sleep(0.1)
+            now = time.monotonic()
+            if t_stream is None and count[0]:
+                t_stream = now
+            if t_stream is None and now - t_start > args.connect_timeout:
+                print("no samples within --connect-timeout; is the device connected and not used by another app?",
+                      file=sys.stderr)
+                break
+            if source.finished.is_set() or (t_stream is not None and now - t_stream >= args.seconds):
+                break
+    except KeyboardInterrupt:
+        print("\ninterrupted")
+    finally:
+        source.stop(timeout=15)
+    with lock:
+        collected = list(items)
+    if not count[0]:
+        if source.last_error:
+            print(f"error: {source.last_error}", file=sys.stderr)
+        return 2
+    print(format_summary(placement_summary(collected, cfg)))
+    return 0
 
 
 # --------------------------------------------------------------------------- live record / view
@@ -287,6 +339,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("info", help="connect and print device identity (no streaming)")
     p.add_argument("--pid", type=lambda s: int(s, 0))
 
+    p = sub.add_parser("check-placement", help="stream a few seconds, write nothing, print stillness and tilt")
+    p.add_argument("--pid", type=lambda s: int(s, 0))
+    p.add_argument("--freq", type=int, help="requested IMU frequency in Hz (default from config: 240)")
+    p.add_argument("--seconds", type=float, default=15.0, help="seconds of streaming (default 15)")
+    p.add_argument("--connect-timeout", type=float, default=15.0)
+
     def live_args(p):
         p.add_argument("--pid", type=lambda s: int(s, 0))
         p.add_argument("--mode", choices=["pose", "raw"])
@@ -334,7 +392,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         except (AttributeError, ValueError):
             pass
     args = build_parser().parse_args(argv)
-    cmds = {"devices": cmd_devices, "info": cmd_info, "record": lambda a: _live(a, view=False),
+    cmds = {"devices": cmd_devices, "info": cmd_info, "check-placement": cmd_check_placement,
+            "record": lambda a: _live(a, view=False),
             "view": lambda a: _live(a, view=True), "replay": cmd_replay, "analyze": cmd_analyze,
             "export": cmd_export, "synth": cmd_synth}
     return cmds[args.cmd](args)

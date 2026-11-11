@@ -3,24 +3,41 @@
 Engineering characterisation of the device. These are **not** participant procedures. Worn recordings by developers wait for
 open item O3 (IRB/faculty confirmation).
 
-**Before every run, the operator approves it.** The person running the software states what will run, how long it
-takes, and how the glasses must be placed. Recordings start only after the operator confirms the setup.
+**Every run is set up together with the operator, then approved.**
+1. The person running the software describes what will run, how long it takes, and the physical setup: support, placement
+   and cable.
+2. The operator sets it up and says when it is ready. A one-click confirmation is not enough: R2 on 2026-11-10 started
+   that way and recorded moving glasses as "stationary".
+3. Before a recording, a **placement check** runs: `headmusic check-placement`, ~15 s, writes no files. It shows the tilt from
+   upright and how much the orientation moved. The operator decides from those numbers whether to start; no pass threshold
+   is applied.
+4. If the data during a run shows the setup is wrong, the run is stopped and the operator is told.
+
 Close VITURE's own apps first.
 
 **Standard "fixture" placement:**
-- The glasses are **upright, as if worn**: arms open, lenses facing forward, nose bridge down.
-- They sit on a rigid stand (a head form, or a box with the arms resting on it). The USB cable is routed so it does not pull on them.
-- **Never lying upside down or folded on the table.** Earlier unannounced runs were upside down; the SDK then reported
-  pitch ≈ −170°, which is not representative of use.
-- Neutral captures (`--capture-neutral-at`, or `N` in the viewer) happen only after the operator confirms this placement.
-- Cross-check: with the glasses upright on the stand, the viewer's **tilt from upright** readout should be near 0°. A value far
-  above 90° means they are upside down. The readout is a placement aid only, and the recorded `q0_tilt_from_upright_deg`
-  documents each capture.
-- Do not touch or move the glasses during a stationary recording. If they are moved, say so, and the run is re-labelled or discarded.
+- The glasses are **upright**: arms open, lenses facing forward, nose bridge down.
+- The support is **rigid**. Two options:
+  - **upright on a hard, flat table**, resting on the bottom of the frame and the arm tips. This is the default;
+  - a stand, such as a head form or a box with the arms resting on it.
+
+  The glasses must not be held, worn, or on anything soft.
+- The USB cable lies slack and is taped to the table a few centimetres from the glasses, so it cannot pull them.
+- **Never lying upside down or folded.** Earlier unannounced runs were upside down; the SDK then reported pitch ≈ −170°,
+  which is not representative of use.
+- During a stationary run, nobody touches or leans on the table, nobody types on it, and no fan blows on the glasses.
+  If the glasses are moved, say so, and the run is re-labelled or discarded.
+- Neutral captures (`--capture-neutral-at`, or `N` in the viewer) happen only after the placement check.
+- **Tilt from upright** (placement check, viewer, and `q0_tilt_from_upright_deg` stored with each neutral capture):
+  - A value far above 90° means the glasses are upside down.
+  - Upright on a table, they lean back by some degrees compared with being worn. The value is recorded with the run, not
+    corrected.
+  - The readout is a placement aid only.
 
 ## Equipment
 
-- The rigid upright stand described above, on a flat table.
+- A hard, flat table that nothing else touches during the runs (keep the keyboard elsewhere), and tape for the cable.
+  A stand is optional.
 - A 90° yaw reference on the table: two tape lines at a right angle, or a carpenter's square against the stand.
 - A wedge of roughly 15–25° with a non-slip top (a ramp, or a book propped on a block). The exact angle does not matter:
   the tilt readout measures it. The glasses must not slide on it while it is moved.
@@ -34,7 +51,7 @@ Commands are `.venv\Scripts\python -m headmusic …`. Every run writes a session
 | Run | Steps | Command | Duration | Placement | Operator action |
 |---|---|---|---|---|---|
 | R1 | 1 | `info` | ~5 s, no streaming | Connected; any placement | None |
-| R2 | 3, and 2 at 240 Hz | `record --freq 240 --duration 600 --mounting fixture --stationary --capture-neutral-at 2` | 10 min | Upright on the stand, room quiet | Confirm placement, then leave untouched |
+| R2 | 3, and 2 at 240 Hz | `check-placement`, then `record --freq 240 --duration 600 --mounting fixture --stationary --capture-neutral-at 2` | 15 s + 10 min | Upright on the table (or stand), room quiet | Set up, then leave the table untouched |
 | R3–R5 | 2 at 60, 90, 120 Hz | `record --freq F --duration 300 --mounting fixture --stationary --capture-neutral-at 2` | 3 × 5 min | Same | Untouched |
 | R6 | 4–8 | `view --record --mounting fixture` | ~15 min | Stand and wedge on the table | Follow the segment script below |
 | R7 | 9 | `view --record --mounting fixture --segment unplug` | ~2 min | Stand | Unplug the USB cable for ~5 s, replug |
@@ -44,7 +61,8 @@ Commands are `.venv\Scripts\python -m headmusic …`. Every run writes a session
 | R11 | 12 | `view --record --close-after 600 --mounting fixture --stationary --capture-neutral-at 2` | 10 min | Upright on the stand | Untouched |
 | R12 | 13 (optional) | `record --mode raw --freq 500 --duration 120 --mounting fixture --stationary` | 2 min | Stand | Untouched |
 
-R2 covers both step 3 and the 240 Hz part of step 2, which saves one 5-minute run.
+R2 covers both step 3 and the 240 Hz part of step 2, which saves one 5-minute run. Each stationary run (R2–R5, R11, R12)
+starts with the 15-second placement check.
 
 ## Steps
 

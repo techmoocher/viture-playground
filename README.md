@@ -50,6 +50,7 @@ Research protocol: [docs/research/](docs/research/).
 |---|---|
 | `headmusic devices` | List glasses and SDK frequency support |
 | `headmusic info` | Identity and firmware (no streaming) |
+| `headmusic check-placement` | ~15 s of streaming, nothing recorded: tilt from upright and how still the glasses are, checked before every bench recording |
 | `headmusic record --duration 60 --mounting fixture --stationary --capture-neutral-at 2` | Headless recording plus report |
 | `headmusic view [--record]` | Live yaw/pitch/roll, tilt from upright (placement aid), neutral capture (`N`), segment marks, tracking-gate status |
 | `headmusic replay <session> --reprocess` | Offline reprocessing; checks byte-identity with the live output |
