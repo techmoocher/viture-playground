@@ -14,6 +14,8 @@ Each run below was approved by the operator before it started, with its setup st
 | **R3** | 2026-11-11 | 2 at 60 Hz | Same setup, table untouched; neutral capture at 2 s | **Valid stationary fixture run, 300 s.** Session `20261111T040406Z_bench_fixture_0fd7c040`; see "Rate per frequency" below |
 | Placement check before R4 | 2026-11-11 | — | Same setup, untouched | 15.1 s at 90 Hz, nothing recorded: tilt 4.8°; maximum deviation 0.006° (RMS 0.003°); 0 invalid; 0 gaps; 84.6 Hz |
 | **R4** | 2026-11-11 | 2 at 90 Hz | Same setup, table untouched; neutral capture at 2 s (accepted, 0.0035°) | **Valid stationary fixture run, 300 s.** Session `20261111T041148Z_bench_fixture_98addf22`; see "Rate per frequency" below |
+| Placement check before R5 | 2026-11-11 | — | Same setup, untouched | 15.1 s at 120 Hz, nothing recorded: tilt 4.8°; maximum deviation 0.006° (RMS 0.003°); 0 invalid; 0 gaps; 112.3 Hz |
+| **R5** | 2026-11-11 | 2 at 120 Hz | Same setup, table untouched; neutral capture at 2 s (accepted, 0.0031°) | **Valid stationary fixture run, 300 s.** Session `20261111T042104Z_bench_fixture_bcf348a3`; see "Rate per frequency" below |
 
 ### R2 results (240 Hz requested, upright on a table, stationary, 600 s)
 
@@ -55,16 +57,28 @@ Observations. These are engineering facts about this device, setup and firmware,
 |---|---|---|---|---|---|---|---|---|---|---|
 | 60 Hz | R3 | 300 s | 59.435 / 59.434 Hz | 16: 4 175 · 17: 12 621 · 18: 1 043 · 19: 5 | 0 | 5 (0.03%) | 0.491 ms | 0.000822° | 0.00293°/min | 59.435 |
 | 90 Hz | R4 | 300 s | 84.613 / 84.611 Hz | 11: 5 413 · 12: 19 183 · 13: 804 | 0 | 3 (0.01%) | 0.424 ms | 0.000859° | 0.00187°/min | 84.613 |
-| 120 Hz | R5 | — | — | — | — | — | — | — | — | — |
+| 120 Hz | R5 | 300 s | 112.342 / 112.340 Hz | 8: 4 238 · 9: 28 580 · 10: 912 | 0 | 8 (0.02%) | 0.416 ms | 0.000839° | 0.00118°/min | 112.342 |
 | 240 Hz | R2 | 600 s | 202.483 / 202.480 Hz | 4: 9 804 · 5: 109 372 · 6: 2 352 | 0 | 61 (0.05%) | 0.438 ms | 0.000768° | 0.00138°/min | 202.483 |
 
 Notes:
-- **R3 and R4 used the adaptive gap reference in their own processing,** because 60 and 90 Hz had no `r_ref` yet. Their
-  gaps were re-checked with the candidates (59.435 and 84.613 Hz): still 0, and the stretches are unchanged.
+- **R3–R5 used the adaptive gap reference in their own processing,** because 60, 90 and 120 Hz had no `r_ref` yet. Their
+  gaps were re-checked with the candidates (59.435, 84.613, 112.342 Hz): still 0, and the stretches are unchanged.
 - **Duplicate timestamps at 60 Hz behave as at 240 Hz:** distinct values, arriving 0.89–1.15 ms after the previous sample.
 - **At 60 Hz the first-difference estimate is 0.00012° (3.3·10⁻⁵° at 240 Hz).** This fits the slow wander seen in R2,
   because samples are farther apart in time.
-- **The achieved rate is below the requested rate** (59.4 for 60, 202.5 for 240), as in the preliminary runs.
+- **The achieved rate is below the requested rate at every frequency,** as in the preliminary runs:
+  - 60 Hz: 99.1% (mean period 16.82 ms);
+  - 90 Hz: 94.0% (11.82 ms);
+  - 120 Hz: 93.6% (8.90 ms);
+  - 240 Hz: 84.4% (4.94 ms).
+
+  The SDK documents the frequency values only as "60/90/120/240 Hz". The cause of the shortfall is not documented.
+- **Behaviour is otherwise very similar across frequencies,** with no gaps or loss anywhere:
+  - angular jitter RMS 0.00077–0.00086°;
+  - apparent drift 0.0012–0.0029°/min;
+  - arrival residual SD 0.42–0.49 ms;
+  - duplicate timestamps 0.01–0.05%.
+- **Step 2 is complete. Step 3 is complete for 240 Hz:** 10 min stationary, per-minute segments in R2's `report.json`.
 
 ## Earlier runs (before the approval rule; preliminary)
 
