@@ -20,6 +20,7 @@ Each run below was approved by the operator before it started, with its setup st
 | R6a, second attempt | 2026-11-11 | 4–6 | Same; viewer with the controls at the top | **No result: no segment was marked**; the command log holds only 9 neutral captures. The first, on line A, was accepted (0.0029°, tilt 5.1°). Of the other 8, 6 were accepted and 2 rejected (`invalid_samples_in_window`), at tilts from 0.2° to 89.5°. Start/End segment work when invoked directly, so the manual controls were too error-prone while handling the glasses: a label, two clicks per step, and an N shortcut that also fires while typing outside the label box.<br>Replaced by the guided scripts (`view --script r6a`). 0 gaps in 383 s. Session `20261111T043909Z_bench_fixture_026263ce` |
 | **R6a (guided)** | 2026-11-11 | 4–6 | Flat table with tape lines A/B and a wedge; guided script `r6a`; not worn | **Valid.** 1 neutral capture (accepted, 0.22°, tilt 5.4°) and 4 segments; 0 gaps in 165 s; 8 duplicate timestamps. Every sign and axis matches the documented conventions; see "R6a results" below. Session `20261111T045253Z_bench_fixture_c19c4fb1` |
 | **R6b (guided)** | 2026-11-11 | 7 (U1) | Glasses fixed on the wedge (~55° tilt); the whole wedge turned on the table; guided script `r6b`; not worn | **U1 resolved: the SDK quaternion maps head → tracking frame (`q_WH`)**, as the processing assumes. 2 segments, 0 gaps, 4 duplicate timestamps; see "R6b results" below. Session `20261111T045720Z_bench_fixture_e7add480` |
+| **R6c (guided)** | 2026-11-11 | 8 (recenter) | Flat table; guided script `r6c`; not worn | **Step 8 passes.** Neutral 1 accepted (0.0097°, tilt 5.1°), turn of 45.5° (`P_head` yaw +45.34°), neutral 2 accepted (0.105°, tilt 5.8°). At the switch to neutral 2 (seq 12446, the first sample after its window), the raw stream steps by 0.0015°, which is normal, so there is no jump. The relative orientation changes from (45.0, 2.1, −3.0)° to (0.0, 0.08, 0.05)°, and `neutral_calibration_id` goes 1 → 2. **4 gaps** of 296–599 ms; see "Gap pattern" below. Session `20261111T050010Z_bench_fixture_2dc3a853` |
 
 ### R2 results (240 Hz requested, upright on a table, stationary, 600 s)
 
@@ -99,6 +100,27 @@ The inverse reading predicts the reverse. See bench-checklist.md, "Reading the U
 - **Consequence: no processing change is needed.** `quat_rel = conj(q0) ⊗ q_WH` is the head-frame rotation relative to the
   neutral, as documented.
 - **The rolled variant could be repeated for completeness.** It does not change the conclusion.
+
+### Gap pattern while the glasses are handled (observation for step 9b)
+
+| Session | Situation | Gaps (device interval) |
+|---|---|---|
+| R2–R5 (35 min in total) | Untouched on the table | none |
+| R6a, first attempt (185 s) | Handled | 9: about 295–299 ms (5×) and 596–599 ms (4×); pairs 0.4–0.8 s apart |
+| R6a, second attempt (383 s) and R6a guided (165 s) | Handled | none |
+| R6b (92 s) | Wedge turned | none |
+| R6c (65 s) | Handled | 4: 599 ms at 2.2 s (before any command); 296 ms at 19.3 s (between the neutral and the turn); 599 + 297 ms at 31.2/31.8 s (during the turn) |
+| Earlier viewer run (preliminary) | Picked up | 1: 297 ms at the pickup |
+
+Observations. These are engineering observations; the cause is not established:
+- **The gaps last about 300 ms or about 600 ms, never in between.**
+- **The device timestamp jumps by the same amount as the host time.** So the device produced no samples in that time.
+  This is not delivery delay on the PC side, which would show as a burst of late samples with continuous device timestamps.
+- **They occur only in handled sessions, but not in every one.**
+- **Two candidate causes for step 9b to tell apart:** movement of the USB cable, and something on the device reacting
+  to a hand nearby. The VITURE Pro is not documented here as having a wear sensor, so this is only a hypothesis to test.
+- **Relevance for later phases:** a 300–600 ms pause makes the tracking gate stale (> 100 ms). So it must never produce
+  a musical command, and gesture state must reset. The processing flags it as `gap_before`.
 
 ### Rate per frequency (step 2; stationary on the table, pose mode)
 
