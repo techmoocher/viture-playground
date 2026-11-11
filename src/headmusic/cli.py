@@ -250,27 +250,41 @@ def _wait_recording(pipe: Pipeline, source, args, stop: threading.Event) -> None
 
 
 # --------------------------------------------------------------------------- instrument (Phase 2)
-def _instrument_cfg(cfg: dict) -> dict:
-    """The instrument section of a (possibly Phase 1) config snapshot, else today's defaults."""
-    return cfg if cfg.get("instrument") else {**cfg, "instrument": load_config()["instrument"]}
+def _stack(cfg: dict, gate, writer=None, **kw):
+    from headmusic.stack import build_stack
+    return build_stack(cfg, gate, writer, **kw)
 
 
-def _attach_instrument(cfg: dict, gate, writer, clock=None, recorded_inputs=None):
-    from headmusic.instrument.consumer import InstrumentConsumer
-    from headmusic.instrument.fsm import GestureFSM
-    from headmusic.instrument.log import InteractionLog
-    from headmusic.instrument.regions import InstrumentConfig
-    icfg = InstrumentConfig.from_config(cfg)
-    log = InteractionLog(writer.dir, write_timing=recorded_inputs is None and clock is not None) if writer else None
-    if writer:
-        writer.update_meta(instrument=icfg.to_meta())
-    return InstrumentConsumer(GestureFSM(icfg), gate, log, clock=clock, recorded_inputs=recorded_inputs), log
+def cmd_midi_devices(args) -> int:
+    from headmusic.music.backends.winmm import describe_devices
+    print(describe_devices())
+    return 0
 
 
-def _close_instrument(consumer, log) -> None:
-    consumer.finish()
-    if log:
-        log.close()
+def cmd_midi_test(args) -> int:
+    """Play C, G, Am, F once through the chord engine (no glasses). Sound check for the chosen output."""
+    from headmusic.instrument.events import InteractionEvent
+    from headmusic.music.backends import make_backend
+    from headmusic.music.config import MusicConfig, midi_device_arg
+    from headmusic.music.engine import ChordEngine
+    cfg = _cfg(args)
+    mcfg = MusicConfig.from_config(cfg, required_chords=["C", "G", "Am", "F"])
+    dev = midi_device_arg(args.midi_device)
+    backend = make_backend(args.audio, mcfg.midi_device if dev is None else dev)
+    print(f"output: {backend.describe()}")
+    engine = ChordEngine(mcfg, backend, clock=time.perf_counter_ns)
+    try:
+        for i, chord in enumerate(("C", "G", "Am", "F")):
+            print(f"  {chord}")
+            engine.on_interaction(InteractionEvent("raw_commit", "return_to_neutral", chord=chord,
+                                                   produced_host_ns=time.perf_counter_ns()), i + 1)
+            time.sleep(args.seconds)
+    except KeyboardInterrupt:
+        print("interrupted")
+    finally:
+        engine.close("midi_test_end")
+    print("all notes off")
+    return 0
 
 
 # --------------------------------------------------------------------------- replay
@@ -288,18 +302,20 @@ def cmd_replay(args) -> int:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         out = Path(args.out) if args.out else Path(args.data) / "replays" / f"{src_dir.name}_reprocessed_{stamp}"
         writer = SessionWriter(out, meta, cfg["io"]["flush_interval_s"], write_raw_pose=False)
-        consumers, inst = [], None
+        stack = None
         if args.instrument:
             from headmusic.instrument.log import read_inputs
-            cfg = _instrument_cfg(cfg)
-            inst = _attach_instrument(cfg, gate, writer, recorded_inputs=read_inputs(src_dir))
-            consumers.append(inst[0])
+            from headmusic.stack import with_phase2_sections
+            cfg = with_phase2_sections(cfg)
+            stack = _stack(cfg, gate, writer, recorded_inputs=read_inputs(src_dir), audio="null")
         pipe = Pipeline(cfg, processor, gate, writer, clock=None, fixed_stream_config=src.stream_config,
-                        consumers=consumers)
+                        consumers=stack.consumers if stack else [])
         t0 = time.perf_counter()
-        pipe.process_all(src.items())
-        if inst:
-            _close_instrument(*inst)
+        try:
+            pipe.process_all(src.items())
+        finally:
+            if stack:
+                stack.close("end_of_stream")
         writer.close()
         dt = time.perf_counter() - t0
         a, b = src_dir / "processed_pose.csv", out / "processed_pose.csv"
@@ -310,15 +326,27 @@ def cmd_replay(args) -> int:
             print(f"processed_pose.csv identical to the original: {same}")
             print(f"calibration_neutral.jsonl identical to the original: {same_cal}")
             same_int = True
-            orig_int = src_dir / "interaction_events.jsonl"
-            if args.instrument and orig_int.exists():
-                same_int = _sha256(orig_int) == _sha256(out / "interaction_events.jsonl")
-                print(f"interaction_events.jsonl identical to the original: {same_int}")
+            for name in ("interaction_events.jsonl", "music_events.jsonl"):
+                orig = src_dir / name
+                if args.instrument and orig.exists():
+                    same = _sha256(orig) == _sha256(out / name)
+                    same_int = same_int and same
+                    print(f"{name} identical to the original: {same}")
             return 0 if (same and same_cal and same_int) else 3
         return 0
     speed = 1.0 if args.speed == "max" and args.view else (None if args.speed == "max" else float(args.speed))
     src = ReplaySource(src_dir, speed=speed)
-    pipe = Pipeline(cfg, processor, gate, None, clock=src.clock, fixed_stream_config=src.stream_config)
+    stack = None
+    if args.instrument:
+        from headmusic.instrument.log import read_inputs
+        from headmusic.music.config import midi_device_arg
+        from headmusic.stack import with_phase2_sections
+        cfg = with_phase2_sections(cfg)
+        stack = _stack(cfg, gate, None, clock=src.clock, recorded_inputs=read_inputs(src_dir), audio=args.audio,
+                       midi_device=midi_device_arg(args.midi_device), realtime=True)
+        print(f"instrument replay with audio output {stack.engine.backend.describe()}")
+    pipe = Pipeline(cfg, processor, gate, None, clock=src.clock, fixed_stream_config=src.stream_config,
+                    consumers=stack.consumers if stack else [])
     src.sink = pipe.put
     pipe.start()
     src.start()
@@ -330,9 +358,15 @@ def cmd_replay(args) -> int:
         else:
             while not src.finished.is_set():
                 time.sleep(0.2)
+    except KeyboardInterrupt:
+        print("interrupted")
     finally:
         src.stop()
         pipe.stop()
+        if stack:
+            stack.close("end_of_replay")
+            commits = [e["chord"] for e in stack.instrument.events if e["event_type"] == "raw_commit"]
+            print(f"instrument commits: {commits}; all notes off")
     print(f"replayed {pipe.stats['pose_samples']} pose samples")
     return 0
 
@@ -364,14 +398,17 @@ def cmd_synth(args) -> int:
     writer = SessionWriter(out, meta, cfg["io"]["flush_interval_s"])
     processor = OrientationProcessor(ProcessorConfig.from_config(cfg))
     gate = TrackingGate.from_config(cfg)
-    inst = _attach_instrument(cfg, gate, writer) if args.instrument else None
+    stack = _stack(cfg, gate, writer, audio="null") if args.instrument else None
     pipe = Pipeline(cfg, processor, gate, writer, clock=None, fixed_stream_config=stream,
-                    consumers=[inst[0]] if inst else [])
+                    consumers=stack.consumers if stack else [])
     writer.update_meta(processing=pipe.stream_info, imu={"frequency_selected_hz": 240})
-    pipe.process_all(trace.items())
-    if inst:
-        _close_instrument(*inst)
-        commits = [e["chord"] for e in inst[0].events if e["event_type"] == "raw_commit"]
+    try:
+        pipe.process_all(trace.items())
+    finally:
+        if stack:
+            stack.close("end_of_stream")
+    if stack:
+        commits = [e["chord"] for e in stack.instrument.events if e["event_type"] == "raw_commit"]
         print(f"instrument commits: {commits}")
     writer.close()
     print(f"synthetic '{args.scenario}' session: {out} ({pipe.stats['pose_samples']} samples)")
@@ -426,7 +463,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--view", action="store_true")
     p.add_argument("--reprocess", action="store_true", help="re-run processing offline and compare with the original")
     p.add_argument("--instrument", action="store_true",
-                   help="with --reprocess: also run the Phase 2 gesture FSM (and compare interaction_events.jsonl)")
+                   help="run the Phase 2 instrument: with --reprocess, offline and compared with the original; "
+                        "otherwise in real time with audio output (--audio)")
+    p.add_argument("--audio", choices=["winmm", "null"], default="winmm", help="real-time replay output")
+    p.add_argument("--midi-device", help="MIDI output device index or name substring (default: [music] config)")
     p.add_argument("--out")
     p = sub.add_parser("analyze", help="timing / jitter / drift report")
     p.add_argument("session")
@@ -436,6 +476,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("export", help="denormalised per-row export (protocol §10 fields)")
     p.add_argument("session")
     p.add_argument("--out")
+    p = sub.add_parser("midi-devices", help="list Windows MIDI output devices")
+    p = sub.add_parser("midi-test", help="play C, G, Am, F once through the chord engine (sound check, no glasses)")
+    p.add_argument("--audio", choices=["winmm", "null"], default="winmm")
+    p.add_argument("--midi-device")
+    p.add_argument("--seconds", type=float, default=0.8)
     p = sub.add_parser("synth", help="write a deterministic synthetic session")
     p.add_argument("scenario", choices=["stationary", "sign_flip", "yaw_wrap", "dropped", "sustained_loss",
                                         "faults", "reconnect", "chords"])
@@ -454,7 +499,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     cmds = {"devices": cmd_devices, "info": cmd_info, "check-placement": cmd_check_placement,
             "record": lambda a: _live(a, view=False),
             "view": lambda a: _live(a, view=True), "replay": cmd_replay, "analyze": cmd_analyze,
-            "export": cmd_export, "synth": cmd_synth}
+            "export": cmd_export, "synth": cmd_synth, "midi-devices": cmd_midi_devices, "midi-test": cmd_midi_test}
     return cmds[args.cmd](args)
 
 

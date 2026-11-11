@@ -43,9 +43,19 @@ def test_instrument_is_independent_of_acquisition_audio_and_ui(path):
     assert not bad, f"{path.name} imports {bad}"
 
 
-def test_only_acquisition_uses_ctypes():
-    users = {p.relative_to(SRC).parts[0] for p in SRC.rglob("*.py") if "ctypes" in imports_of(p)}
-    assert users <= {"acquisition"}
+MUSIC_FORBIDDEN = ("headmusic.acquisition", "headmusic.pipeline", "headmusic.viewer", "headmusic.cli", "tkinter")
+
+
+@pytest.mark.parametrize("path", sorted((SRC / "music").rglob("*.py")), ids=lambda p: p.name)
+def test_music_never_sees_sensors_or_ui(path):
+    """Phase 2B: the chord engine consumes instrument events only."""
+    bad = {m for m in imports_of(path) if m.startswith(MUSIC_FORBIDDEN)}
+    assert not bad, f"{path.name} imports {bad}"
+
+
+def test_only_hardware_boundaries_use_ctypes():
+    users = {str(p.relative_to(SRC).as_posix()) for p in SRC.rglob("*.py") if "ctypes" in imports_of(p)}
+    assert {u for u in users if not u.startswith("acquisition/")} <= {"music/backends/winmm.py"}
 
 
 def test_core_imports_without_sdk_present():
