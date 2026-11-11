@@ -26,7 +26,7 @@ Observations come from runs on 2026-11-10. Several were started without announci
 | Achieved pose rates (preliminary) | 60 → 59.4 Hz; 90 → 84.7 Hz; 120 → 112.3 Hz; 240 → 202.5–202.6 Hz. **Never assume the requested rate** |
 | Device timestamp | `uint64`, nanosecond units, **1 ms resolution** (all values multiples of 10⁶). Epoch consistent with time since power-on |
 | Duplicate-timestamp reports | Occasionally the device sends an extra pose report with the **same device timestamp** as the previous one, slightly different values, about 1 ms later in host time. Seen 0–2 times per 15 s at each rate. Flagged `ts_duplicate`, kept, and excluded by the gate |
-| Device-side pause | One 297 ms gap in device timestamps, coinciding with the glasses being picked up or moved (viewer run). The SDK logged no error. The cause is unknown |
+| Device-side pause | One 297 ms gap in device timestamps when the glasses were picked up from the table (operator-confirmed; viewer run). A 13° orientation step followed. The SDK logged no error. Cause unknown (cable or connector movement? on-device filter?); to be reproduced deliberately in the bench run |
 | Quaternion sign | SDK quaternions always have `w ≥ 0`, so the sign jumps when `w` passes 0 (3 times in a 30 s handled session) |
 | Quaternion order | `[qw, qx, qy, qz]` after the 3 Euler values; norm 1 ± 2·10⁻⁷ |
 | SDK Euler | Degrees (2.4.0 release notes). Rotation order undocumented and not identifiable from one static pose. SDK pitch read −168° (non-standard range). Not used for computation |
