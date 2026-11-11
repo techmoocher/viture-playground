@@ -1,0 +1,51 @@
+# headmusic configuration defaults.
+#
+# Every value here is a PROVISIONAL ENGINEERING DEFAULT. None of them is a validated hardware
+# limit or an ergonomic/biomechanical threshold. Each value is copied into session.json for
+# every recording. Precise definitions: docs/quality-and-metrics.md
+config_version = 1
+
+[imu]
+mode = "pose"                  # "pose" (primary, protocol §2.1) | "raw" (separate characterisation session)
+frequency_requested_hz = 240   # used only if supported in the selected mode, else the highest supported
+                               # rate below it (logged as a fallback); never silently above the request
+
+[neutral]
+window_s = 3.0                 # capture window (device clock), initial engineering value
+tau_stab_deg = 2.0             # PLACEHOLDER max dispersion for acceptance; to be set from bench data (open item O6).
+                               # Not a statement about human stillness.
+
+[flags]
+gap_reference = "measured"     # "measured": m = 1e9 / r_ref (fixture-measured rate) | "adaptive": running quantile
+k_gap = 1.5                    # gap if interval > k_gap * m + ts_resolution_ns
+ts_resolution_ns = 1000000     # device timestamp resolution, measured 2026-11-10 (1 ms)
+ref_quantile = 0.25            # adaptive fallback: quantile of recent valid intervals
+n_ref = 200                    # adaptive fallback: window length (intervals)
+n_min = 20                     # adaptive fallback: warm-up; before that m = 1e9 / f_selected
+tau_jump_deg = 20.0            # sensor-glitch detector between consecutive samples; NOT a head-motion limit
+tau_norm = 1e-3                # |‖q‖ − 1| above this sets norm_deviation (informational)
+eps_zero = 1e-6                # ‖q‖ below this sets zero_norm (invalidating)
+euler_singular_deg = 89.0      # |display pitch| above this sets euler_near_singular (numeric guard)
+
+# Fixture-measured achieved rates (Hz) for the VITURE Pro (PID 0x101D), keyed by selected frequency.
+# Source: read-only probe 2026-11-10 (docs/phase1-proposal.md §3.5). Replace with bench-report values.
+[flags.r_ref_hz.pose]
+"240" = 202.5
+
+[flags.r_ref_hz.raw]
+
+[gate]
+t_stale_ms = 100               # stream is stale if no valid sample arrived for longer than this (host clock)
+
+[metrics]
+w_ref_s = 5.0                  # stationary reference window (first W_ref seconds)
+w_jitter_s = 1.0               # centred moving-average width used to detrend angular jitter
+
+[io]
+flush_interval_s = 1.0         # files are flushed at least this often (max data lost on a crash)
+
+[acquisition]
+drain_interval_ms = 5          # how often the drain thread empties the native ring buffer
+reconnect_poll_s = 1.0         # USB re-enumeration period (disconnect detection and reconnect)
+auto_reconnect = true
+sdk_log_level = 1              # 0 none, 1 error, 2 info, 3 debug

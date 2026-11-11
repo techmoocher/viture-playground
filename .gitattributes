@@ -1,0 +1,4 @@
+* text=auto
+# Shell scripts run inside WSL and must keep LF line endings.
+*.sh text eol=lf
+*.c text eol=lf
