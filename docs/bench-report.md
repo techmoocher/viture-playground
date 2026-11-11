@@ -1,4 +1,70 @@
-# Bench report (G0) — in progress
+# Bench report (G0)
+
+## G0 summary (2026-11-11)
+
+**Fixture characterisation is complete, except steps 12 and 13.** The operator ended the tests before them. Worn
+characterisation has not started: it waits for O3. Every run below was set up with and approved by the operator.
+Thresholds remain provisional engineering defaults.
+
+| Step | Result | Run |
+|---|---|---|
+| 1 Identity | **Pass.** Pro, GEN1, firmware `07.0.03.013_20250422`, SDK 2.4.2; pose up to 240 Hz, raw up to 500 Hz | R1 |
+| 2 Rate per frequency | **Pass.** No loss at any frequency; measured `r_ref` adopted (table below) | R2–R5 |
+| 3 Stationary 10 min | **Pass** at 240 Hz. Jitter 0.00077° RMS, apparent drift 0.0014 °/min, no gaps | R2 |
+| 4–6 Axis signs | **Pass.** Left turn +90.5°, right −89.8°, nose-down +39.8° (axis +Y), right side down +55.3° (axis +X) | R6a |
+| 7 Quaternion direction (U1) | **Pass. The SDK quaternion maps head → tracking frame (`q_WH`).** The axis was 2.6° from vertical for the tracking-frame change and 56.6° for the head-frame change, at a 55° tilt. The rolled variant slipped and was not repeated (operator decision) | R6b |
+| 8 Recenter | **Pass.** Neutral 1 → 2 with no raw jump; the relative orientation resets to ~0 | R6c |
+| 9 Unplug / replug | **Pass.** Detected about 1 s after the last sample; new connection; neutral invalidated; **the device clock restarts on replug** | R7 |
+| 9b Pause causes | **Investigated, cause not established.** Moving the cable at the PC end gave a **full disconnect**; a hand nearby gave no gaps; lift and put back gave no gaps | R8 |
+| 10 Sleep / wake | **Documented; it exposed a gate defect, now fixed.** A pre-sleep sample arrived 29.9 s late. The gate now measures data age from the production time, checked on this recording | R9 |
+| 11 Second process | **Pass.** A clean "only one process" error; the first stream was undisturbed | R10 |
+| 12 Headless vs viewer timing | **Not run** (operator ended the tests) | — |
+| 13 Raw mode | **Not run** (optional; Phase 2 uses pose mode) | — |
+
+**Key fixture results (pose mode, upright on a table, untouched):**
+
+| Requested | Achieved | Jitter RMS | Drift | Arrival residual SD | Duplicate ts | Gaps |
+|---|---|---|---|---|---|---|
+| 60 Hz | 59.435 Hz | 0.00082° | 0.0029 °/min | 0.49 ms | 0.03% | 0 |
+| 90 Hz | 84.613 Hz | 0.00086° | 0.0019 °/min | 0.42 ms | 0.01% | 0 |
+| 120 Hz | 112.342 Hz | 0.00084° | 0.0012 °/min | 0.42 ms | 0.02% | 0 |
+| 240 Hz | 202.483 Hz | 0.00077° | 0.0014 °/min | 0.44 ms | 0.05% | 0 |
+
+**Findings that matter for later phases** (details below; threats-to-validity TV3, TV4, TV7, TV9–TV12):
+- **The SDK output is heavily smoothed.** Tiny sample-to-sample change; the filter latency is unknown.
+- **Device-side pauses of about 300 or 600 ms**, cause unknown, in some handled sessions and once with the glasses untouched.
+  Each one makes the gate stale.
+- **Cable movement can disconnect the glasses entirely** (an 11 s outage, power cycle).
+- **The device clock restarts with every connection.**
+- **After a PC sleep, old samples arrive late.** The gate now handles this.
+
+**Software added or fixed during G0:**
+- Per-segment net-rotation report, with the U1 discriminator.
+- Longest gap-free stretch, and `analyze --reference-rate-hz`.
+- `check-placement`.
+- Guided bench scripts (`view --script`).
+- The viewer's layout and press confirmation.
+- Report fixes: sequence gaps, small-angle precision.
+- **Gate staleness by data age**, with the new provisional `gate.offset_drift_ppm` = 200.
+- `r_ref` measured for 60/90/120/240 Hz.
+
+**Open, for the operator or the research team:**
+- **O3:** worn characterisation, and trying the instrument on the head.
+- **O4:** host-timing precision target.
+- **O5:** disconnects or pauses during a block.
+- **O6:** `tau_stab_deg`.
+- **Whether duplicate timestamps stay invalidating.**
+- **The cause of the 300/600 ms pauses.**
+- **Steps 12–13**, if wanted later.
+
+**Process lessons:**
+- Set up each run together with the operator, and check the placement before recording. R2's first attempt recorded a
+  moving device as "stationary".
+- Manual viewer controls were error-prone while handling the glasses. Both early R6a attempts produced no segment marks;
+  guided mode fixed that.
+
+---
+
 
 ## Approved runs (run plan in [bench-checklist.md](bench-checklist.md))
 
@@ -210,11 +276,14 @@ From the viewer session above, which is mislabelled and only partly on the table
 
 ## Software checks that need no hardware conditions
 
-- The unit tests pass without glasses (107 at the first commit; the count grows with the code). They cover:
+- The unit tests pass without glasses (107 at the first commit, 160 at the end of G0). They cover:
   - math, flags, neutral capture, the gate and the recording round trip;
   - replay byte-identity on 5 synthetic scenarios and export reproducibility;
   - metric recovery, module boundaries, SDK prototypes vs headers, and the shim;
   - for G0, the segment report recovering yaw, pitch and roll signs, and telling the two quaternion readings apart (U1) in both bench procedures.
+  - the guided scripts, including a simulated operator walking R6a end to end;
+  - the placement check;
+  - the gate's data-age staleness: the R9 late-sample pattern, 3 h of clock drift, and reconnects.
 - On real data, live and replayed processed output are byte-identical (10 s, 60 Hz session, including a real `ts_duplicate`).
 - In the viewer run, the processing behaved as designed:
   - the gap was flagged;
@@ -222,8 +291,13 @@ From the viewer session above, which is mislabelled and only partly on the table
   - the SDK sign jumps during the movement were made continuous;
   - no `q_rel` was produced without an accepted neutral.
 
-## To do (each run only after the operator approves it)
+## Not run (operator decision, 2026-11-11)
 
-Runs R1–R12 of the run plan in [bench-checklist.md](bench-checklist.md), covering steps 1–13. Then replace the
-`[flags.r_ref_hz.pose]` defaults with the fixture-measured rates, following "Deriving r_ref". The preliminary
-values in this report stay as they are, for comparison.
+These stay in the run plan in [bench-checklist.md](bench-checklist.md), and each needs the operator's approval and a
+placement check:
+- **R11, step 12:** headless vs viewer timing.
+- **R12, step 13:** raw mode, optional.
+- **The repeat of the rolled U1 segment.**
+
+The fixture-measured `r_ref` values have replaced the preliminary default. The preliminary values in this report stay
+as they are, for comparison.

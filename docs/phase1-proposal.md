@@ -1,7 +1,7 @@
 # Phase 1 — Hardware Foundation: Engineering Proposal
 
 **Revision:** 2 (2026-11-10). This revision incorporates your review decisions (§0). Revision 1 is in this file's history once git is initialised.
-**Status:** **implemented** (Python + native C capture shim, chosen 2026-11-10). The G0 bench characterisation is pending and runs only with operator approval ([bench-checklist.md](bench-checklist.md)). The current definitions live in [conventions.md](conventions.md), [quality-and-metrics.md](quality-and-metrics.md) and [data-format.md](data-format.md); where they differ from this proposal, those documents are authoritative.
+**Status:** **implemented** (Python + native C capture shim, chosen 2026-11-10). **G0 fixture characterisation was done on 2026-11-11, except steps 12–13, which were not run** (summary in [bench-report.md](bench-report.md)). Worn characterisation waits for O3. The current definitions live in [conventions.md](conventions.md), [quality-and-metrics.md](quality-and-metrics.md) and [data-format.md](data-format.md); where they differ from this proposal, those documents are authoritative.
 
 Refinements made during implementation, each found by a test on real or synthetic data:
 - **Gap and timestamp checks** compare to the last sample whose timestamp was in order (`d_ref`), not the last *valid* sample. Otherwise invalid values created false gaps.
@@ -9,6 +9,12 @@ Refinements made during implementation, each found by a test on real or syntheti
 - **`hemisphere_flip`** marks SDK sign changes once. The SDK keeps `w ≥ 0`; the earlier definition flagged every sample after the first change.
 - **Duplicate-timestamp reports** from the device are real (see sdk-notes.md). They are flagged `ts_duplicate` and kept.
 - **Defaults** live in `src/headmusic/defaults.toml` (packaged), not `config/defaults.toml`.
+- **Gate staleness** is measured by data age, from the estimated production time, not by arrival time. G0 R9 found a sample arriving 29.9 s late after a PC sleep.
+- **G0 tooling:**
+  - the segment net-rotation report, which provides the U1 test;
+  - `check-placement`;
+  - guided bench scripts (`view --script`);
+  - the longest gap-free stretch, giving `r_ref` measured per frequency.
 **Scope:** Phase 1 only (hardware data pipeline). No musical interface, gestures, dwell, MIDI, HUD, calibration ratings, comfort or coupled models, ML, or experiments.
 
 | Input | Status |
@@ -68,12 +74,12 @@ This document is intended as the Phase 1 section of the Software Requirements Sp
 
 | # | Item | Status |
 |---|---|---|
-| O1 | Research report missing from the folder | Please add it; I'll re-check this plan against it |
-| O2 | Toolchain. The hardware test (§3.5) shows a pure-Python callback loses data under load | **Pending your answer.** Recommendation: Python + native C capture shim built with MinGW in WSL (§3.4 Option 2) |
+| O1 | Research report missing from the folder | Still missing on 2026-11-11. Please add it; I'll re-check this plan and the Phase 2 proposal against it |
+| O2 | Toolchain. The hardware test (§3.5) shows a pure-Python callback loses data under load | **Decided (2026-11-10): Python + native C capture shim**, built with MinGW in WSL |
 | O3 | Worn recordings by developers: confirm with faculty or the IRB that engineering self-testing is outside the human-subjects gate | Not answered. Fixture-only work does not depend on it |
 | O4 | **Methodology flag:** the protocol states no host-timing precision requirement. Whether a timing path is "adequate" for later raw-commit and rhythmic-error measures (protocol §8) is a research requirement | Phase 1 reports measured timing noise; the research team sets the target before Phase 2 |
-| O5 | **Methodology flag:** after a disconnect, Phase 1 invalidates the neutral reference and requires a new capture, because the filter heading may change across reconnects (unverified, U5). How a later *scored block* handles a mid-block disconnect (abort, pause, or re-capture) is an experiment-procedure decision | Phase 1 only enforces "no usable tracking until a new neutral is accepted" |
-| O6 | Value for the neutral stability threshold `τ_stab` (§5.6). The 2.0° default is a placeholder, not a statement about human stillness | Proposed: choose it from Step 7's stationary data (fixture and, if O3 allows, worn) |
+| O5 | **Methodology flag:** after a disconnect, Phase 1 invalidates the neutral reference and requires a new capture, because the filter heading may change across reconnects (unverified, U5). G0 found that the device clock restarts and the glasses power-cycle on replug, and that moving the cable can disconnect them (R7, R8). How a later *scored block* handles a mid-block disconnect (abort, pause, or re-capture) is an experiment-procedure decision | Phase 1 only enforces "no usable tracking until a new neutral is accepted" |
+| O6 | Value for the neutral stability threshold `τ_stab` (§5.6). The 2.0° default is a placeholder, not a statement about human stillness | Fixture data now exists: accepted untouched captures had a maximum dispersion of 0.003–0.010°, and captures right after handling 0.1–0.6°. Worn data waits for O3. The value is the research team's choice |
 
 ---
 

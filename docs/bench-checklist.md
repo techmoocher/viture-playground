@@ -1,5 +1,7 @@
 # G0 bench checklist (protocol §2.3, gate G0)
 
+**Status (2026-11-11):** the fixture steps 1–11 are done; steps 12 and 13 were not run (operator decision). See the G0 summary in [bench-report.md](bench-report.md).
+
 Engineering characterisation of the device. These are **not** participant procedures. Worn recordings by developers wait for
 open item O3 (IRB/faculty confirmation).
 
