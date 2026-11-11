@@ -142,3 +142,18 @@ def test_emergency_stop_fallback_silences_when_the_pipeline_does_not_act():
     finally:
         app.root.destroy()
         stack.close("test")
+
+
+def test_direct_mode_shows_the_sounding_chord_apart_from_the_candidate():
+    """MVP refinement: G sounds while C is being confirmed; the HUD shows both, and the confirmation progress."""
+    f = {**fsm("dwell_armed", "C", 0.5, yaw=31.0), "transitions": "direct", "playback": "latch",
+         "active": "G", "candidate": "C"}
+    m = model(f, {"chord": "G", "notes_on": [55, 59, 62]})
+    assert m.sounding_text == "SOUNDING: G"
+    assert m.state_text == "CONFIRMING C   50%" and m.progress == 0.5
+    assert m.candidate_text == "candidate: C   confirming  50%"
+    assert "G keeps sounding until C is confirmed" in m.hint
+    roles = {b.chord: b.role for b in m.regions}
+    assert roles["G"] == "sounding" and roles["C"] == "dwell"
+    m2 = model({**f, "state": "engaged", "region": "G", "progress": None, "candidate": None}, {"chord": "G"})
+    assert m2.candidate_text == "candidate: none" and m2.progress is None

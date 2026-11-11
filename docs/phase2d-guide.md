@@ -25,7 +25,7 @@ If PowerShell blocks the activation script, call the command by path; changing t
 
 ## 2. Synthetic replay demos (no glasses)
 
-**MVP iteration 2** changed the defaults (continuous play, immediate keys, sustained organ patch). Its demos are in [mvp-iteration-2.md](mvp-iteration-2.md) §7. The demos below were recorded with the first MVP and still replay as recorded.
+**MVP iteration 2** changed the defaults (continuous play, an 80 ms / 2° settle time with the active chord sounding until the next is confirmed, sustained organ patch). Its demos are in [mvp-iteration-2.md](mvp-iteration-2.md) §7. The demos below were recorded with the first MVP and still replay as recorded.
 
 The sessions are already in `data/sessions/` (git-ignored). Run each in a terminal; the play window opens with sound. Esc silences everything at any time; it is the only key active in replay.
 

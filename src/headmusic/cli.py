@@ -595,7 +595,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("synth", help="write a deterministic synthetic session")
     p.add_argument("scenario", choices=["stationary", "sign_flip", "yaw_wrap", "dropped", "sustained_loss",
                                         "faults", "reconnect", "chords", "chords_faults", "transitions",
-                                        "continuous"])
+                                        "continuous", "traverse"])
     p.add_argument("--instrument", action="store_true", help="also run the Phase 2 gesture FSM")
     p.add_argument("--out")
     return ap

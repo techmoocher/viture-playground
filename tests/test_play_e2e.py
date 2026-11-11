@@ -84,12 +84,12 @@ def test_play_end_to_end_with_a_simulated_device(tmp_path, monkeypatch, capsys):
                    "--no-keep-awake"])
     out = capsys.readouterr().out
     assert rc == 0, out
-    # MVP defaults (immediate keys): the turn to C crosses G, which sounds briefly
-    assert "commits: ['G', 'C', 'Am']; all notes off" in out
+    # MVP defaults (80 ms / 2° settle): the turn to C crosses G without sounding it
+    assert "commits: ['C', 'Am']; all notes off" in out
     session = next((data / "sessions").iterdir())
 
     ev = read_events(session)
-    assert [e["chord"] for e in ev if e["event_type"] == "raw_commit"] == ["G", "C", "Am"]
+    assert [e["chord"] for e in ev if e["event_type"] == "raw_commit"] == ["C", "Am"]
     inputs = [r["kind"] for r in read_inputs(session)]
     assert "stale_tick" in inputs  # the pause was detected live, between samples
     music = read_jsonl(session / "music_events.jsonl")
@@ -113,7 +113,7 @@ def test_play_end_to_end_with_a_simulated_device(tmp_path, monkeypatch, capsys):
 
     assert cli.main(["instrument-report", str(session)]) == 0
     rep = capsys.readouterr().out
-    assert "commits (3): G C Am" in rep and "stale_tick" in rep and "ESTIMATED" in rep
+    assert "commits (2): C Am" in rep and "stale_tick" in rep and "ESTIMATED" in rep
     assert (session / "analysis" / "instrument_report.md").exists()
 
 

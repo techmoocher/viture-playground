@@ -28,7 +28,8 @@ def test_defaults_load_and_validate():
     ic = InstrumentConfig.from_config(load_config())
     assert [r.chord for r in ic.regions] == ["C", "G", "Am", "F"]
     meta = ic.to_meta()
-    assert meta["dwell_ms"] == 0.0 and meta["transitions"] == "direct" and "provisional" in meta  # iteration 2
+    assert meta["dwell_ms"] == 80.0 and meta["dwell_stability_deg"] == 2.0 and meta["transitions"] == "direct"
+    assert meta["neutral_rest_release_ms"] == 0.0 and "provisional" in meta  # MVP interaction refinement
     assert len(meta["mapping_version"]) == 16
 
 

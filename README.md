@@ -88,7 +88,7 @@ Unit tests need no glasses. Hardware tests are opt-in; run them only with the gl
 | [quality-and-metrics.md](docs/quality-and-metrics.md) | Sample flags, tracking gate, neutral capture, metric definitions, provisional parameters |
 | [data-format.md](docs/data-format.md) | Session files, columns, mapping to protocol §10, export |
 | [instrument.md](docs/instrument.md) | Phase 2 gesture state machine: regions, states, resets, logs |
-| [mvp-iteration-2.md](docs/mvp-iteration-2.md) | MVP iteration 2: continuous play (direct, immediate keys, latch or hold), sustained patch, profiles, demos |
+| [mvp-iteration-2.md](docs/mvp-iteration-2.md) | MVP iteration 2: continuous play (direct, 80 ms / 2° settle, active and candidate chord, latch or hold), sustained patch, profiles, demos |
 | [phase2d-guide.md](docs/phase2d-guide.md) | Phase 2D: demos, emergency-stop evidence, angle review, live smoke-test plan, issue log, merge procedure |
 | [play.md](docs/play.md) | Phase 2 play window, keys, emergency stop, `headmusic play` |
 | [music.md](docs/music.md) | Phase 2 chord engine: MIDI, interruptions, panic, accompaniment, logs |

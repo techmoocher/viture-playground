@@ -153,7 +153,9 @@ class PlayApp:
         c.create_rectangle(x(0), py, x(1), py + 14, outline=GRID)
         if m.progress is not None:
             c.create_rectangle(x(0), py, x(m.progress), py + 14, fill="#2f6b9a", outline="")
-        c.create_text(x(0), py + 18, anchor="nw", text="dwell progress", fill=MUTED, font=("Segoe UI", 9))
+        c.create_text(x(0), py + 18, anchor="nw", text=m.candidate_text + "   (the sounding chord changes only when "
+                      "the candidate is confirmed)", fill=TEXT if m.progress is not None else MUTED,
+                      font=("Segoe UI", 10))
         # status lines
         lines = [m.yaw_text, m.notes_text, m.mode_text + "   ·   " + m.accompaniment_text, m.output_text,
                  "recent commits: " + (" ".join(m.recent_commits) or "—"),

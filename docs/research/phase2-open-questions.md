@@ -38,8 +38,8 @@
 
 | # | Topic | Engineering default | Question |
 |---|---|---|---|
-| Q17 | Interaction machine for the formal experiment | The MVP now defaults to direct switching between contiguous, immediate keys (no dwell, no return to neutral), latch playback, and neutral = silence. The protocol §6 machine (dwell 500 ms, return to neutral) is kept as `config/profiles/via_neutral.toml` | Which machine, dwell and layout should conditions A/B/C use? Protocol §6 and §12 item 2 assume dwell-to-commit with a return-to-neutral gate |
-| Q18 | Crossing keys with immediate sound | Keys the cursor crosses sound briefly (G → F crosses Am). `confirm.toml` (dwell 500 ms, 3° stability) suppresses this | Acceptable for the instrument? How does it interact with the false-activation measure (protocol §8)? |
+| Q17 | Interaction machine for the formal experiment | The MVP now defaults to direct switching between contiguous keys with an 80 ms / 2° settle time (no return to neutral), latch playback; the active chord sounds until the next is confirmed, and neutral does not silence it (mvp-iteration-2.md §8). The protocol §6 machine (dwell 500 ms, return to neutral) is kept as `config/profiles/via_neutral.toml` | Which machine, dwell and layout should conditions A/B/C use? Protocol §6 and §12 item 2 assume dwell-to-commit with a return-to-neutral gate |
+| Q18 | Crossing keys | With immediate keys (`immediate.toml`) crossed keys sound briefly. The 80 ms / 2° default silences crossings faster than ~25°/s; slower ones still sound. `confirm.toml` (500 ms, 3°) silences all tested speeds at ~0.5 s onset | Acceptable for the instrument? How does it interact with the false-activation measure (protocol §8)? |
 | Q19 | Sustain | Drawbar Organ (GM 16) by default; GM 0 (piano) decays while held, which was R2D-1's "no sustain" | Which timbre for the study? |
 
 ## Carried over from Phase 1

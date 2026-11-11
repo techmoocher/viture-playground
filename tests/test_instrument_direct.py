@@ -27,7 +27,17 @@ def direct(**kw):
 
 
 def immediate(**kw):
-    """The MVP default: direct switching, immediate keys (dwell 0), latch, neutral = silence."""
+    """Immediate keys as in the first iteration-2 MVP (config/profiles/immediate.toml): direct switching, dwell 0,
+    latch, neutral = silence after 150 ms."""
+    kw.setdefault("transitions", "direct")
+    kw.setdefault("dwell_ms", 0.0)
+    kw.setdefault("neutral_rest_release_ms", 150.0)
+    return Driver(**kw)
+
+
+def settle(**kw):
+    """The MVP defaults (interaction refinement): direct, 80 ms settle with a 2° stability band, latch, and the
+    neutral zone never silences the active chord."""
     kw.setdefault("transitions", "direct")
     return Driver(**kw)
 
@@ -66,8 +76,8 @@ def test_latch_keeps_g_sounding_while_travelling_across_other_keys():
     assert d.fsm.state == ENGAGED
 
 
-def test_neutral_means_silence_by_default():
-    d = direct()
+def test_neutral_rest_release_when_configured():
+    d = direct(neutral_rest_release_ms=150.0)  # iteration 2's first default; now 0 (off)
     d.arm()
     play(d, "G")
     d.move(YAW["G"], 0.0, 60)
@@ -265,6 +275,7 @@ def test_old_queued_samples_never_arm_after_recovery_in_direct_mode():
 
 # ---------------------------------------------------------------------------- MIDI: sustain, patch, releases
 CONFIRM = {"dwell_ms": 500.0, "cooldown_ms": 300.0, "dwell_stability_deg": 3.0}  # config/profiles/confirm.toml
+IMMEDIATE = {"dwell_ms": 0.0, "neutral_rest_release_ms": 150.0}  # config/profiles/immediate.toml
 
 
 def run_stack(items, **instrument):
@@ -285,14 +296,15 @@ def test_sustained_patch_and_no_note_off_while_latched_across_movement():
     assert m[0] == (0xC0, 16, 0)  # Drawbar Organ program change first
     ons = [i for i, x in enumerate(m) if x[0] == 0x90]
     offs = [i for i, x in enumerate(m) if x[0] == 0x80]
-    # C (60 64 67) sounds from its commit until Am is confirmed, while the head sweeps across G and neutral
+    # C (60 64 67) sounds from its commit until Am is confirmed, while the head sweeps across G and neutral;
+    # F sounds through the slow traverse (neutral never silences by default) until C is confirmed
     c_on = next(i for i in ons if m[i][1] == 60)
     am_on = next(i for i in ons if m[i][1] == 57 and i > c_on)
     assert not [i for i in offs if c_on < i < am_on - 3]
     from test_music_engine import check_pairing
     check_pairing(m)
     reasons = [e.get("reason") for e in stack.engine.events if e["event_type"] == "midi_note_off"]
-    assert reasons == ["chord_change", "chord_change", "chord_change", "neutral_rest", "intentional"]
+    assert reasons == ["chord_change"] * 4 + ["intentional"]
 
 
 def test_hold_mode_midi_releases_on_leaving():
@@ -307,7 +319,7 @@ def test_release_command_through_the_pipeline_is_logged_and_replayable():
     assert len(cmds) == 1
     stack = run_stack(items, **CONFIRM)
     assert [e["reason"] for e in stack.instrument.events if e["event_type"] == "chord_release"] == \
-        ["neutral_rest", "intentional"]
+        ["intentional"]
 
 
 def test_transitions_demo_commits():
@@ -391,11 +403,231 @@ def test_immediate_neutral_silences_and_recovery_needs_leaving_the_key():
     assert releases(d)[-1] == ("G", "neutral_rest")
 
 
-def test_continuous_demo_scenario():
-    stack = run_stack(syn.scenario_continuous().items())
+def test_continuous_demo_with_immediate_keys():
+    stack = run_stack(syn.scenario_continuous().items(), **IMMEDIATE)
     commits = [e["chord"] for e in stack.instrument.events if e["event_type"] == "raw_commit"]
     assert commits == ["G", "C", "G", "Am", "F", "Am", "G", "C", "G"]  # the way back to neutral crosses G
     from test_music_engine import check_pairing
     check_pairing(stack.engine.backend.messages)
     reasons = [e.get("reason") for e in stack.engine.events if e["event_type"] == "midi_note_off"]
     assert reasons[:-1] == ["chord_change"] * 8 and reasons[-1] == "neutral_rest"
+
+
+# ---------------------------------------------------------------------------- the MVP default: 80 ms / 2° settle
+# docs/mvp-iteration-2.md §8. The ACTIVE chord (last confirmed) keeps sounding while a CANDIDATE is confirmed.
+def default_stack_trace(path):
+    """Neutral capture, then the head path `path` [(t_s, yaw_deg), ...] (keyframes)."""
+    s = syn.generate(path[-1][0] + 0.2, orientation=syn.keyframes(path))
+    return syn.Trace(s, [syn.capture_command(20, window_s=0.5)], [syn.connected_event(1)])
+
+
+def step_stack(items, **instrument):
+    """Runs the full stack (FSM + chord engine, null MIDI) item by item and records, after every pose sample,
+    (FSM state, active chord, candidate chord, chord the engine sounds, MIDI notes on)."""
+    cfg = load_config()
+    cfg["instrument"] = {**cfg["instrument"], **instrument}
+    gate = TrackingGate.from_config(cfg)
+    stack = build_stack(cfg, gate, audio="null")
+    pipe = Pipeline(cfg, OrientationProcessor(ProcessorConfig.from_config(cfg)), gate, None, clock=None,
+                    fixed_stream_config={"selected_hz": 240, "reference_rate_hz": 202.5}, consumers=stack.consumers)
+    trace = []
+    fsm = stack.instrument.fsm
+    for item in items:
+        pipe._handle(item)
+        if hasattr(item, "device_ts_raw"):
+            snap = stack.engine.snapshot()
+            trace.append((fsm.state, fsm.active_chord, fsm.candidate_chord, snap["chord"], tuple(snap["notes_on"])))
+    stack.final_snapshot = stack.engine.snapshot()  # after every input, before the stream-end stop
+    stack.close("end_of_stream")
+    return stack, trace
+
+
+def note_events(stack):
+    return [(e["event_type"], e["chord"], e.get("reason")) for e in stack.engine.events
+            if e["event_type"] in ("midi_note_on", "midi_note_off")]
+
+
+@pytest.mark.parametrize("deg_per_s", [30.0, 60.0, 120.0, 240.0])
+def test_f_to_c_has_no_audible_gap_through_other_keys_and_neutral(deg_per_s):
+    """F sounds, the head turns to C across Am, neutral and G: F sounds at every sample until C is confirmed,
+    then C. Nothing else sounds and there is never a sample with no chord."""
+    move = (31.0 - -31.0) / deg_per_s
+    stack, trace = step_stack(default_stack_trace(
+        [(0.0, 0.0), (1.0, 0.0), (1.3, -31.0), (2.3, -31.0), (2.3 + move, 31.0), (3.3 + move, 31.0)]).items())
+    first_f = next(i for i, x in enumerate(trace) if x[3] == "F")
+    sounding = [x[3] for x in trace[first_f:]]
+    assert None not in sounding  # no gap, ever
+    c_from = sounding.index("C")
+    assert set(sounding[:c_from]) == {"F"} and set(sounding[c_from:]) == {"C"}
+    assert note_events(stack) == [("midi_note_on", "F", None), ("midi_note_off", "F", "chord_change"),
+                                  ("midi_note_on", "C", None), ("midi_note_off", "C", "interruption:stop")]
+    f_notes = trace[first_f][4]
+    assert all(x[4] == f_notes for x in trace[first_f:first_f + c_from])  # the F notes stay on, unchanged
+
+
+def test_slow_pass_across_neutral_keeps_the_active_chord():
+    """neutral_rest_release_ms = 0: Am -> G at 10 deg/s spends ~1 s in the neutral zone; Am sounds throughout."""
+    stack, trace = step_stack(default_stack_trace(
+        [(0.0, 0.0), (1.0, 0.0), (1.3, -13.0), (2.3, -13.0), (4.9, 13.0), (5.9, 13.0)]).items())
+    first = next(i for i, x in enumerate(trace) if x[3] == "Am")
+    sounding = [x[3] for x in trace[first:]]
+    assert None not in sounding and sounding[-1] == "G"
+    assert any(x[0] == NEUTRAL and x[3] == "Am" for x in trace)
+    assert [e for e in note_events(stack) if e[0] == "midi_note_off"] == [
+        ("midi_note_off", "Am", "chord_change"), ("midi_note_off", "G", "interruption:stop")]
+
+
+def test_g_sustains_while_c_is_pending_confirmation():
+    d = settle()
+    d.arm()
+    play(d, "G")
+    d.move(YAW["G"], YAW["C"], 300)  # 60 deg/s
+    pending = []
+    while d.commits() == ["G"]:
+        d.sample(YAW["C"])
+        if d.fsm.candidate_chord == "C":
+            pending.append(d.fsm.active_chord)
+    assert pending and set(pending) == {"G"}  # C was the candidate for a while, G active the whole time
+    starts = [e for e in d.events if e.event_type == "dwell_start" and e.chord == "C"]
+    assert starts and all(e.active_chord == "G" for e in starts)
+    commit = [e for e in d.events if e.event_type == "raw_commit"][-1]
+    assert commit.chord == "C" and commit.active_chord == "G"  # the confirmation names the chord it replaces
+    assert len(pending) * DT_NS <= 80e6 + DT_NS  # onset after stopping: the 80 ms dwell, within one sample
+    assert releases(d) == []
+
+
+def test_cancelled_or_restarted_confirmation_never_releases_g():
+    d = settle()
+    d.arm()
+    play(d, "G")
+    d.move(YAW["G"], YAW["C"], 300)
+    d.hold(YAW["C"], 40)  # C pending
+    for k in range(20):  # sway of ±3° inside C: the confirmation restarts again and again
+        d.sample(YAW["C"] + (3.0 if k % 2 else -3.0))
+    assert "dwell_restart" in d.types() and d.commits() == ["G"]
+    d.move(YAW["C"], 0.0, 300)  # change direction: C is cancelled, back across G to neutral
+    d.hold(0.0, 3000)  # a long rest in neutral
+    assert "dwell_cancel" in d.types()
+    g_commit = max(i for i, e in enumerate(d.events) if e.event_type == "raw_commit")
+    candidate_events = [e for e in d.events[g_commit:] if e.event_type in ("dwell_restart", "dwell_cancel")]
+    assert candidate_events
+    assert all(e.active_chord == "G" for e in candidate_events)
+    assert d.commits() == ["G"] and releases(d) == [] and d.fsm.active_chord == "G"
+
+
+def test_a_confirmed_chord_switches_the_sound_exactly_once():
+    stack, trace = step_stack(default_stack_trace(
+        [(0.0, 0.0), (1.0, 0.0), (1.3, 13.0), (2.3, 13.0), (2.6, 31.0), (5.0, 31.0)]).items())
+    assert note_events(stack) == [("midi_note_on", "G", None), ("midi_note_off", "G", "chord_change"),
+                                  ("midi_note_on", "C", None), ("midi_note_off", "C", "interruption:stop")]
+    m = stack.engine.backend.messages
+    assert len([x for x in m if x[0] == 0x90 and x[1] == 60]) == 1  # C's root note-on is sent once
+    from test_music_engine import check_pairing
+    check_pairing(m)
+    changes = [i for i in range(1, len(trace)) if trace[i][3] != trace[i - 1][3]]
+    assert [trace[i][3] for i in changes] == ["G", "C"]  # silent -> G -> C: one switch to C, on one sample
+
+
+def test_remaining_within_one_region_never_retriggers():
+    d = settle()
+    d.arm()
+    play(d, "C")
+    rng = random.Random(7)
+    for _ in range(3000):  # 15 s of large movement that stays inside C [18, 40] (beyond the 2° band)
+        d.sample(rng.uniform(21.0, 38.0))
+    assert d.commits() == ["C"] and releases(d) == [] and d.fsm.state == ENGAGED
+
+
+@pytest.mark.parametrize("deg_per_s, expected", [(15.0, ["F", "Am", "G", "C"]), (30.0, ["F", "C"])])
+def test_very_slow_crossings_may_still_activate_intermediate_keys(deg_per_s, expected):
+    """Known limitation (docs/mvp-iteration-2.md §8): below about stability / dwell = 2° / 80 ms = 25 deg/s, a
+    crossing looks like a deliberate placement, so the crossed keys become active on the way."""
+    d = settle()
+    d.arm()
+    play(d, "F")
+    d.move(YAW["F"], YAW["C"], 1000 * (YAW["C"] - YAW["F"]) / deg_per_s)
+    d.hold(YAW["C"], 300)
+    assert d.commits() == expected
+
+
+def test_release_r_while_a_candidate_is_pending_silences_and_cancels_it():
+    d = settle()
+    d.arm()
+    play(d, "G")
+    d.move(YAW["G"], YAW["C"], 300)
+    d.hold(YAW["C"], 30)
+    assert d.fsm.candidate_chord == "C" and d.fsm.active_chord == "G"
+    d.command("release_chord")
+    assert releases(d) == [("G", "intentional")] and d.fsm.state == UNARMED
+    assert d.fsm.active_chord is None and d.fsm.candidate_chord is None
+    d.hold(YAW["C"], 2000)  # still in C: R means silence, C does not start a moment later
+    assert d.commits() == ["G"]
+    play(d, "G", move_ms=300)  # leave C: armed again
+    assert d.commits() == ["G", "G"]
+
+
+@pytest.mark.parametrize("how", ["release", "panic", "stale", "disconnect"])
+@pytest.mark.parametrize("when", ["active", "pending"])
+def test_release_panic_and_tracking_failure_silence(how, when):
+    """R, Esc (panic) and genuine tracking failures silence the active chord, also while a candidate is pending."""
+    from headmusic.types import Event
+    rate = 202.5
+    path = [(0.0, 0.0), (1.0, 0.0), (1.3, 13.0), (2.3, 13.0)]
+    if when == "pending":
+        path += [(2.6, 31.0)]  # the interruption hits ~20 ms after reaching C, before the 80 ms confirmation
+    t_cut = path[-1][0] + 0.02
+    path += [(t_cut + 2.0, path[-1][1])]
+    s = syn.generate(path[-1][0], orientation=syn.keyframes(path))
+    i_cut = int(t_cut * rate)
+    cmds, evs = [syn.capture_command(20, window_s=0.5)], [syn.connected_event(1)]
+    if how == "release":
+        cmds.append(Command("release_chord", 0, {}, after_seq=i_cut))
+    elif how == "panic":
+        cmds.append(Command("panic", 0, {}, after_seq=i_cut))
+    elif how == "stale":
+        s = syn.resequence(s[:i_cut] + s[i_cut + int(0.6 * rate):])  # 600 ms device pause
+    else:
+        s = s[:i_cut]
+        evs.append(Event("device_disconnected", 0, {"connection_id": 1, "last_seq": i_cut - 1}))
+    stack, trace = step_stack(syn.Trace(s, cmds, evs).items())
+    assert stack.final_snapshot["chord"] is None and stack.final_snapshot["notes_on"] == []  # silent afterwards
+    assert [e["chord"] for e in stack.instrument.events if e["event_type"] == "raw_commit"] == ["G"]
+    if how == "panic":  # everything off at once (CC 123/120 + reset), logged as one panic event
+        assert "panic" in [e["event_type"] for e in stack.engine.events]
+        return
+    offs = [e for e in note_events(stack) if e[0] == "midi_note_off"]
+    expected = {"release": "intentional", "stale": "interruption:gap", "disconnect": "interruption:disconnect"}[how]
+    assert offs and offs[0][1] == "G" and offs[0][2] == expected, offs
+
+
+def test_continuous_demo_default_settle():
+    """The operator's flow with the defaults: C -> G -> F -> Am -> C, every crossed key silent, no gap, then R."""
+    stack, trace = step_stack(syn.scenario_continuous().items())
+    assert [e["chord"] for e in stack.instrument.events if e["event_type"] == "raw_commit"] == \
+        ["C", "G", "F", "Am", "C"]
+    first = next(i for i, x in enumerate(trace) if x[3] == "C")
+    last = max(i for i, x in enumerate(trace) if x[3] is not None)
+    assert None not in [x[3] for x in trace[first:last + 1]]
+    reasons = [e[2] for e in note_events(stack) if e[0] == "midi_note_off"]
+    assert reasons == ["chord_change"] * 4 + ["intentional"]
+
+
+def test_settle_session_replays_identically(tmp_path):
+    """The candidate and active fields are deterministic: record the continuous demo, replay it, compare."""
+    from headmusic.cli import main
+    s = tmp_path / "s"
+    assert main(["synth", "continuous", "--instrument", "--out", str(s)]) == 0
+    text = (s / "interaction_events.jsonl").read_text(encoding="utf-8")
+    assert '"active_chord"' in text  # candidate events name the sounding chord
+    assert main(["replay", str(s), "--reprocess", "--instrument", "--out", str(tmp_path / "r")]) == 0
+    for f in ("interaction_events.jsonl", "music_events.jsonl"):
+        assert (s / f).read_bytes() == (tmp_path / "r" / f).read_bytes()
+
+
+@pytest.mark.parametrize("profile, expected", [
+    ({}, ["F", "C", "F", "Am", "G", "C"]),  # defaults: only the 15 deg/s pass sounds the crossed keys
+    (IMMEDIATE, ["Am", "F", "Am", "G", "C", "G", "Am", "F", "Am", "G", "C"]),  # every crossed key sounds
+    (CONFIRM, ["F", "C", "F", "C"])])
+def test_traverse_demo_compares_settle_settings(profile, expected):
+    stack, trace = step_stack(syn.scenario_traverse().items(), **profile)
+    assert [e["chord"] for e in stack.instrument.events if e["event_type"] == "raw_commit"] == expected

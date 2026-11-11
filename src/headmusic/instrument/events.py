@@ -5,6 +5,12 @@ raw_commit, return_neutral) plus: aim_exit, dwell_cancel, gesture_reset, state_c
 instrument_enabled, instrument_disabled, panic, neutral_capture_end, sample_skipped, and (MVP iteration 2)
 dwell_restart, engaged_enter, chord_release.
 
+Active and candidate chord (transitions = "direct"): the ACTIVE chord is the last confirmed chord, which keeps
+sounding (latch); the CANDIDATE is the chord of the region being confirmed (dwell_armed). The candidate events
+dwell_start, dwell_restart, dwell_cancel, dwell_complete and raw_commit carry `chord` = the candidate and
+`active_chord` = the chord sounding at that moment (on raw_commit: the chord it replaces). `active_chord` is
+written only when set, so records of the protocol machine and of earlier sessions are unchanged.
+
 Timestamps (docs/phase2-proposal.md §6.2). For an event decided on a pose sample:
 - device_ts_raw, host_rx_monotonic_ns: that sample's device timestamp and host arrival time;
 - produced_host_ns: its estimated production time on the host timebase (device_ts + o_min, TrackingGate),
@@ -45,12 +51,16 @@ class InteractionEvent:
     reason: Optional[str] = None
     dwell_elapsed_ns: Optional[int] = None
     yaw_rel_deg: Optional[float] = None
+    active_chord: Optional[str] = None  # direct mode, candidate events only (see above)
 
     def record(self, event_id: int, mapping_version: str) -> dict:
-        return {"event_id": event_id, "event_type": self.event_type, "state": self.state,
+        r = {"event_id": event_id, "event_type": self.event_type, "state": self.state,
                 "prev_state": self.prev_state, "seq": self.seq, "connection_id": self.connection_id,
                 "neutral_calibration_id": self.neutral_calibration_id, "device_ts_raw": self.device_ts_raw,
                 "host_rx_monotonic_ns": self.host_rx_monotonic_ns, "produced_host_ns": self.produced_host_ns,
                 "input_host_ns": self.input_host_ns, "chord": self.chord, "reason": self.reason,
                 "dwell_elapsed_ns": self.dwell_elapsed_ns, "yaw_rel_deg": self.yaw_rel_deg,
                 "mapping_version": mapping_version}
+        if self.active_chord is not None:
+            r["active_chord"] = self.active_chord
+        return r

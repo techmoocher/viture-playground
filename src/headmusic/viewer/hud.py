@@ -47,6 +47,7 @@ class HudModel:
     axis_ticks: tuple[tuple[float, str], ...] = field(default_factory=tuple)
     notes_text: str = ""
     mode_text: str = ""
+    candidate_text: str = ""  # the chord being confirmed and its progress, apart from the sounding chord
 
 
 def axis_half_range(icfg: InstrumentConfig) -> float:
@@ -126,6 +127,11 @@ def hud_model(icfg: InstrumentConfig, fsm: dict, engine: dict, gate_usable: bool
         st, lvl = f"PLAYING {region}", OK
         hint = (f"{region} latched: move to another chord and hold to switch" if latch
                 else f"{region} sounds while you stay here; leaving releases it")
+    elif state == DWELL_ARMED and direct:
+        progress = fsm.get("progress") or 0.0
+        st, lvl = f"CONFIRMING {region}  {progress * 100:3.0f}%", OK
+        hint = (f"{sounding} keeps sounding until {region} is confirmed: hold still on {region}" if sounding
+                else f"hold still on {region} to play it")
     elif state == DWELL_ARMED:
         progress = fsm.get("progress") or 0.0
         st, lvl, hint = f"DWELL {region}  {progress * 100:3.0f}%", OK, f"hold to play {region}"
@@ -169,9 +175,13 @@ def hud_model(icfg: InstrumentConfig, fsm: dict, engine: dict, gate_usable: bool
         notes_text += f"   ·   last release: {lr[0]}"
     if engine.get("program"):
         notes_text += f"   ·   patch: {engine['program']}"
+    if state == DWELL_ARMED:
+        candidate_text = f"candidate: {region}   confirming {(fsm.get('progress') or 0.0) * 100:3.0f}%"
+    else:
+        candidate_text = "candidate: none"
     mode_text = (f"transitions: {fsm.get('transitions', 'via_neutral')}   ·   playback: {fsm.get('playback', 'latch')}")
     n = icfg.neutral_yaw_deg
     ticks = tuple((yaw_to_x(v, half), f"{v:+.0f}°") for v in (half, half / 2, 0.0, -half / 2, -half))
     return HudModel(tracking, tlevel, st, lvl, hint, tuple(boxes), yaw_to_x(n, half), yaw_to_x(-n, half), cursor,
                     eligible, yaw_text, progress, sounding_text, acc_text, out_text, out_level,
-                    tuple(recent_commits[-8:]), ticks, notes_text, mode_text)
+                    tuple(recent_commits[-8:]), ticks, notes_text, mode_text, candidate_text)

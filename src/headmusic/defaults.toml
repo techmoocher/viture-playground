@@ -71,9 +71,11 @@ start_enabled = true
 neutral_yaw_deg = 5.0          # neutral zone |yaw_rel| <= this: rest / silence (latch) and where the neutral
                                # is calibrated. Keys may start at its edge. (2A layout: 4.0)
 hysteresis_deg = 1.5           # enter a zone inside its interval, stay while within the interval ± this
-dwell_ms = 0.0                 # 0 = immediate keys: the chord sounds as soon as the cursor enters its key
-                               # (MVP iteration 2). > 0 = confirm by dwelling; the protocol §6 candidate is
-                               # 400–600 ms (config/profiles/via_neutral.toml, confirm.toml use 500)
+dwell_ms = 80.0                # short settle time (MVP interaction refinement, docs/mvp-iteration-2.md §8):
+                               # a key sounds once the cursor has stayed within dwell_stability_deg for this
+                               # long; keys crossed faster than ~stability/dwell (25°/s) stay silent, and the
+                               # active chord keeps sounding meanwhile. 0 = immediate keys (sound on entry).
+                               # The protocol §6 candidate is 400–600 ms (via_neutral.toml, confirm.toml: 500)
 cooldown_ms = 0.0              # no new chord within this time after a commit; 0 = off (MVP iteration 2;
                                # the protocol machine profile uses 300)
 rearm_hold_ms = 0.0            # time in the neutral zone needed to re-arm after a commit or reset
@@ -85,11 +87,11 @@ duplicate_timestamp = "reset"  # "reset": a duplicate device timestamp resets th
 transitions = "direct"         # "direct": switch chords without returning to neutral | "via_neutral": protocol §6
 playback = "latch"             # "latch": sounds until another commit, a release or an interruption |
                                # "hold": sounds only while the head stays in the chord's region
-dwell_stability_deg = 3.0      # the dwell restarts if yaw_rel moves more than this from where it started
-                               # (stops slow passes through other regions committing); 0 = off
-neutral_rest_release_ms = 150.0  # latch: neutral means silence. Resting in the neutral zone this long releases
-                               # the chord; the short debounce keeps a fast sweep across neutral (left key →
-                               # right key) from cutting the sound. 0 = never (chord sounds until switched/released)
+dwell_stability_deg = 2.0      # the dwell restarts if yaw_rel moves more than this from where it started
+                               # (a crossing never settles, a stop does); 0 = off
+neutral_rest_release_ms = 0.0  # latch: 0 = the neutral zone never silences the chord (it sounds until another
+                               # chord is confirmed, R, Esc or a safety interruption). > 0 = resting in neutral
+                               # this long releases it (iteration 2 used 150; it cut slow crossings of neutral)
 
 # Contiguous keys (MVP iteration 2: "no gap between the keys"): each key starts where the previous one ends, so
 # moving from one to the next switches directly; hysteresis decides at each shared edge. Provisional layout for

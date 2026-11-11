@@ -1,0 +1,6 @@
+# Immediate keys, as in the first MVP iteration 2 (docs/mvp-iteration-2.md §8): the chord sounds on the first
+# sample inside its key, so keys crossed on the way sound briefly ("sliding a finger over the keys"), and resting
+# in the neutral zone for 150 ms silences a latched chord. Provisional engineering values, no ergonomic claim.
+[instrument]
+dwell_ms = 0.0
+neutral_rest_release_ms = 150.0
