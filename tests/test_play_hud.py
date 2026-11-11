@@ -31,7 +31,7 @@ def test_axis_puts_left_turns_on_the_left():
     assert half == 50.0
     assert yaw_to_x(31.0, half) < 0.5 < yaw_to_x(-31.0, half)
     boxes = {b.chord: b for b in model(fsm("neutral")).regions}
-    assert boxes["C"].x1 < boxes["G"].x0 < boxes["G"].x1 < 0.5 < boxes["Am"].x0 < boxes["F"].x0
+    assert boxes["C"].x1 <= boxes["G"].x0 < boxes["G"].x1 < 0.5 < boxes["Am"].x0 < boxes["F"].x0  # contiguous
     m = model(fsm("dwell_armed", "C", 0.4, yaw=31.0))
     assert boxes["C"].x0 <= m.cursor_x <= boxes["C"].x1
 
@@ -99,8 +99,9 @@ def test_play_window_draws_and_sends_only_commands():
         app.root.update()
         app.draw()
         m = app.model
-        assert m.sounding_text == "SOUNDING: C" and m.state_text.startswith("PLAYED")
-        assert m.recent_commits == ("C",)
+        assert m.sounding_text == "SOUNDING: C" and m.state_text == "PLAYING C"  # direct + latch (iteration 2)
+        assert m.notes_text.startswith("notes on: 60 64 67") and "Drawbar Organ" in m.notes_text
+        assert m.recent_commits[-1] == "C"  # immediate keys: G sounded briefly on the way
         n_before = pipe.q.qsize()
         app.emergency_stop()
         app.capture()

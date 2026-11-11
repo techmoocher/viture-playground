@@ -6,7 +6,6 @@ import pytest
 
 from headmusic.acquisition import synthetic as syn
 from headmusic.acquisition.replay_source import ReplaySource
-from headmusic.config import load_config
 from headmusic.instrument.consumer import InstrumentConsumer
 from headmusic.instrument.fsm import GestureFSM
 from headmusic.instrument.log import EVENTS_FILE, INPUTS_FILE, TIMING_FILE, InteractionLog, read_inputs
@@ -19,6 +18,16 @@ from headmusic.tracking.gate import TrackingGate
 from headmusic.types import Event, RawPoseSample
 
 STREAM = {"selected_hz": 240, "reference_rate_hz": 202.5}
+
+
+def load_config():
+    """This file tests fault handling in the real pipeline with the protocol machine and the 2A layout (as since
+    2A). The iteration-2 machine has its own pipeline tests in test_instrument_direct.py."""
+    from headmusic.config import load_config as _load
+    from instrument_helpers import PROTOCOL_2A
+    cfg = _load()
+    cfg["instrument"] = {**cfg["instrument"], **PROTOCOL_2A}
+    return cfg
 
 
 def build(cfg, writer=None, clock=None, recorded_inputs=None, log_dir=None):

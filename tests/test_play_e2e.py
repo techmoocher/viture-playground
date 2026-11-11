@@ -84,16 +84,18 @@ def test_play_end_to_end_with_a_simulated_device(tmp_path, monkeypatch, capsys):
                    "--no-keep-awake"])
     out = capsys.readouterr().out
     assert rc == 0, out
-    assert "commits: ['C', 'Am']; all notes off" in out
+    # MVP defaults (immediate keys): the turn to C crosses G, which sounds briefly
+    assert "commits: ['G', 'C', 'Am']; all notes off" in out
     session = next((data / "sessions").iterdir())
 
     ev = read_events(session)
-    assert [e["chord"] for e in ev if e["event_type"] == "raw_commit"] == ["C", "Am"]
+    assert [e["chord"] for e in ev if e["event_type"] == "raw_commit"] == ["G", "C", "Am"]
     inputs = [r["kind"] for r in read_inputs(session)]
     assert "stale_tick" in inputs  # the pause was detected live, between samples
     music = read_jsonl(session / "music_events.jsonl")
     offs = [m for m in music if m["event_type"] == "midi_note_off"]
-    assert offs[0]["chord"] == "C" and offs[0]["reason"] == "interruption:stale_tick"
+    assert {"chord": "C", "reason": "interruption:stale_tick"}.items() <= next(
+        m for m in offs if m["chord"] == "C").items()
     assert [m["event_type"] for m in music][-2:] == ["panic", "engine_stop"]  # closing the window = panic first
     timing = read_jsonl(session / "music_timing.jsonl")
     lat = [t["estimated_software_latency_ns"] for t in timing if "estimated_software_latency_ns" in t]
@@ -111,7 +113,7 @@ def test_play_end_to_end_with_a_simulated_device(tmp_path, monkeypatch, capsys):
 
     assert cli.main(["instrument-report", str(session)]) == 0
     rep = capsys.readouterr().out
-    assert "commits (2): C Am" in rep and "stale_tick" in rep and "ESTIMATED" in rep
+    assert "commits (3): G C Am" in rep and "stale_tick" in rep and "ESTIMATED" in rep
     assert (session / "analysis" / "instrument_report.md").exists()
 
 

@@ -34,6 +34,14 @@
 | Q15 | Passing through inner regions | Four chords on one yaw axis: reaching C or F passes through G or Am. A turn slower than region width ÷ dwell (10° / 0.5 s = 20°/s by default) commits the inner chord ([phase2d-guide.md](../phase2d-guide.md) U1) | Accept, or change the layout (two axes?), the dwell, or add a speed condition? |
 | Q16 | Smaller demo layout | Optional `config/profiles/small_yaw.toml` (regions within ±24°, otherwise the same). Not a default, no comfort claim | Should a worn exploratory demo (after O3) use it, or values set by the team? |
 
+## MVP iteration 2 (2026-11-11, [mvp-iteration-2.md](../mvp-iteration-2.md))
+
+| # | Topic | Engineering default | Question |
+|---|---|---|---|
+| Q17 | Interaction machine for the formal experiment | The MVP now defaults to direct switching between contiguous, immediate keys (no dwell, no return to neutral), latch playback, and neutral = silence. The protocol §6 machine (dwell 500 ms, return to neutral) is kept as `config/profiles/via_neutral.toml` | Which machine, dwell and layout should conditions A/B/C use? Protocol §6 and §12 item 2 assume dwell-to-commit with a return-to-neutral gate |
+| Q18 | Crossing keys with immediate sound | Keys the cursor crosses sound briefly (G → F crosses Am). `confirm.toml` (dwell 500 ms, 3° stability) suppresses this | Acceptable for the instrument? How does it interact with the false-activation measure (protocol §8)? |
+| Q19 | Sustain | Drawbar Organ (GM 16) by default; GM 0 (piano) decays while held, which was R2D-1's "no sustain" | Which timbre for the study? |
+
 ## Carried over from Phase 1
 
 - **O1:** the research report is missing; Q1–Q14 should be re-checked against it.

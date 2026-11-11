@@ -2,7 +2,8 @@
 
 Event types use the protocol §10.3 names where they exist (aim_enter, dwell_start, dwell_complete,
 raw_commit, return_neutral) plus: aim_exit, dwell_cancel, gesture_reset, state_change, inactive_reason,
-instrument_enabled, instrument_disabled, panic, neutral_capture_end.
+instrument_enabled, instrument_disabled, panic, neutral_capture_end, sample_skipped, and (MVP iteration 2)
+dwell_restart, engaged_enter, chord_release.
 
 Timestamps (docs/phase2-proposal.md §6.2). For an event decided on a pose sample:
 - device_ts_raw, host_rx_monotonic_ns: that sample's device timestamp and host arrival time;
@@ -23,8 +24,9 @@ UNARMED = "unarmed"
 NEUTRAL = "neutral"
 AIMING = "aiming"
 DWELL_ARMED = "dwell_armed"
-RETURN_TO_NEUTRAL = "return_to_neutral"
-STATES = (INACTIVE, UNARMED, NEUTRAL, AIMING, DWELL_ARMED, RETURN_TO_NEUTRAL)
+RETURN_TO_NEUTRAL = "return_to_neutral"  # transitions = "via_neutral" only
+ENGAGED = "engaged"  # transitions = "direct": in the region of the selected chord (never re-triggers)
+STATES = (INACTIVE, UNARMED, NEUTRAL, AIMING, DWELL_ARMED, RETURN_TO_NEUTRAL, ENGAGED)
 
 
 @dataclass(frozen=True, slots=True)

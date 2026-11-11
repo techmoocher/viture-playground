@@ -227,9 +227,42 @@ def scenario_chords_faults() -> Trace:
     return Trace(first + second, cmds, ev, {"scenario": "chords_faults"})
 
 
+def scenario_transitions() -> Trace:
+    """MVP iteration 2 demo (docs/mvp-iteration-2.md), default contiguous keys, latch with neutral = silence:
+    - G, then DIRECTLY to C (no neutral);
+    - a fast sweep from C across G and neutral into Am: C keeps sounding until Am is confirmed (no gap);
+    - F;
+    - a SLOW traverse (12 deg/s) from F to C across Am, neutral and G: none of them plays (dwell stability);
+      F is released while the head passes slowly through neutral (neutral = silence);
+    - C is confirmed, then released on purpose (R) while still in C, then a rest.
+    Expected commits: G, C, Am, F, C. With config/profiles/hold.toml each chord stops when its key is left."""
+    rate = 202.5
+    keys = [(0.0, 0.0), (1.5, 0.0), (1.8, 13.0), (2.8, 13.0), (3.0, 31.0), (4.0, 31.0), (4.3, -13.0), (5.3, -13.0),
+            (5.6, -31.0), (6.6, -31.0), (11.77, 31.0), (13.0, 31.0), (13.3, 0.0), (15.0, 0.0)]
+    s = generate(15.5, orientation=keyframes(keys))
+    release = Command("release_chord", 0, {}, after_seq=int(12.7 * rate))
+    return Trace(s, [capture_command(20, window_s=0.5), release], [connected_event(1)], {"scenario": "transitions"})
+
+
+def scenario_continuous() -> Trace:
+    """The operator's flow with the MVP defaults (immediate keys, latch, neutral = silence): calibrate at neutral
+    once, then C -> G -> F -> Am -> C continuously without returning to neutral, then a rest (silence).
+    Keys crossed on the way sound briefly: G -> F crosses Am, Am -> C crosses G (and neutral, too fast to silence).
+    Expected commits: G, C, G, Am, F, Am, G, C, and G again on the way back to the final rest."""
+    keys = [(0.0, 0.0), (1.5, 0.0)]
+    t, prev = 1.5, 0.0
+    for y in (31.0, 13.0, -31.0, -13.0, 31.0):
+        keys += [(t + 0.25, y), (t + 1.25, y)]
+        t, prev = t + 1.25, y
+    keys += [(t + 0.3, 0.0), (t + 1.5, 0.0)]
+    s = generate(t + 2.0, orientation=keyframes(keys))
+    return Trace(s, [capture_command(20, window_s=0.5)], [connected_event(1)], {"scenario": "continuous"})
+
+
 SCENARIOS = {
     "stationary": scenario_stationary, "sign_flip": scenario_sign_flip, "yaw_wrap": scenario_yaw_wrap,
     "dropped": scenario_dropped, "sustained_loss": scenario_sustained_loss, "faults": scenario_faults,
     "reconnect": scenario_reconnect, "chords": scenario_chords,
-    "chords_faults": scenario_chords_faults,
+    "chords_faults": scenario_chords_faults, "transitions": scenario_transitions,
+    "continuous": scenario_continuous,
 }

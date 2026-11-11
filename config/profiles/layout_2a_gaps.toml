@@ -1,0 +1,23 @@
+# The 2A bench layout, with gaps between the keys (used by the first MVP and by R2D-1).
+[instrument]
+neutral_yaw_deg = 4.0
+
+[[instrument.yaw_regions]]
+chord = "C"
+yaw_min_deg = 22.0
+yaw_max_deg = 40.0
+
+[[instrument.yaw_regions]]
+chord = "G"
+yaw_min_deg = 8.0
+yaw_max_deg = 18.0
+
+[[instrument.yaw_regions]]
+chord = "Am"
+yaw_min_deg = -18.0
+yaw_max_deg = -8.0
+
+[[instrument.yaw_regions]]
+chord = "F"
+yaw_min_deg = -40.0
+yaw_max_deg = -22.0

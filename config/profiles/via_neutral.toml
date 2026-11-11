@@ -1,0 +1,30 @@
+# The protocol §6 state machine (neutral → aiming → dwell-armed → committed → return-to-neutral), exactly as in
+# the first MVP: every chord needs a return to neutral, the chord sounds until the next commit, the 2A layout
+# with gaps. Kept for comparison and for the research team's choice for the formal experiment (research Q17).
+[instrument]
+transitions = "via_neutral"
+dwell_ms = 500.0
+cooldown_ms = 300.0
+dwell_stability_deg = 0.0
+neutral_rest_release_ms = 0.0
+neutral_yaw_deg = 4.0
+
+[[instrument.yaw_regions]]
+chord = "C"
+yaw_min_deg = 22.0
+yaw_max_deg = 40.0
+
+[[instrument.yaw_regions]]
+chord = "G"
+yaw_min_deg = 8.0
+yaw_max_deg = 18.0
+
+[[instrument.yaw_regions]]
+chord = "Am"
+yaw_min_deg = -18.0
+yaw_max_deg = -8.0
+
+[[instrument.yaw_regions]]
+chord = "F"
+yaw_min_deg = -40.0
+yaw_max_deg = -22.0

@@ -358,10 +358,13 @@ def cmd_midi_test(args) -> int:
     from headmusic.music.config import MusicConfig, midi_device_arg
     from headmusic.music.engine import ChordEngine
     cfg = _cfg(args)
+    if args.program is not None:
+        cfg["music"]["program"] = args.program
     mcfg = MusicConfig.from_config(cfg, required_chords=["C", "G", "Am", "F"])
     dev = midi_device_arg(args.midi_device)
     backend = make_backend(args.audio, mcfg.midi_device if dev is None else dev)
-    print(f"output: {backend.describe()}")
+    print(f"output: {backend.describe()}  patch: {mcfg.program if mcfg.program is not None else 'synth default'}"
+          f"  ({args.seconds:g} s per chord, notes held for the whole time)")
     engine = ChordEngine(mcfg, backend, clock=time.perf_counter_ns)
     try:
         for i, chord in enumerate(("C", "G", "Am", "F")):
@@ -587,10 +590,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("midi-test", help="play C, G, Am, F once through the chord engine (sound check, no glasses)")
     p.add_argument("--audio", choices=["winmm", "null"], default="winmm")
     p.add_argument("--midi-device")
-    p.add_argument("--seconds", type=float, default=0.8)
+    p.add_argument("--seconds", type=float, default=0.8, help="how long each chord is held (try 3 to hear sustain)")
+    p.add_argument("--program", type=int, help="General MIDI program, 0-based (16 organ, 0 piano, 89 warm pad)")
     p = sub.add_parser("synth", help="write a deterministic synthetic session")
     p.add_argument("scenario", choices=["stationary", "sign_flip", "yaw_wrap", "dropped", "sustained_loss",
-                                        "faults", "reconnect", "chords", "chords_faults"])
+                                        "faults", "reconnect", "chords", "chords_faults", "transitions",
+                                        "continuous"])
     p.add_argument("--instrument", action="store_true", help="also run the Phase 2 gesture FSM")
     p.add_argument("--out")
     return ap

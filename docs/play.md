@@ -28,6 +28,7 @@ While playing, Windows is asked not to sleep (`SetThreadExecutionState`, per pro
 | **N** | Capture neutral | `capture_neutral` |
 | **E** | Enable the instrument (after an emergency stop or disable) | `instrument_enable`. Arming then still needs a return to neutral |
 | **A** | Accompaniment start / stop | Only if `[music.accompaniment] enabled = true` |
+| **R** | Release the sounding chord (MVP iteration 2) | `release_chord`. The key under the cursor stays silent until left |
 
 - Every action is a pipeline command, so it is recorded in `commands.jsonl` and replayed.
 - **The window decides nothing.** It reads snapshots of the FSM, the engine and the gate; an architecture test checks its imports.

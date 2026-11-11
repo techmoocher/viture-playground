@@ -104,6 +104,10 @@ Each reset raises a freshness watermark. Samples produced (by the gate's estimat
 
 The chord engine is in [music.md](music.md) (2B).
 
+## MVP iteration 2
+
+The defaults are now direct switching between contiguous, immediate keys, with latch playback and neutral = silence. See [mvp-iteration-2.md](mvp-iteration-2.md). This page's states and parameters describe the protocol §6 machine (`config/profiles/via_neutral.toml`).
+
 ## Play window
 
 `headmusic play` and the HUD are described in [play.md](play.md) (2C). Hardware runs are 2D.

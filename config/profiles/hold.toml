@@ -1,0 +1,5 @@
+# MVP iteration 2: hold mode. A chord sounds only while the head stays in its region; leaving releases it.
+# Use with:  headmusic --config config/profiles/hold.toml play ...   (or synth / replay --reprocess)
+# Provisional engineering option (docs/mvp-iteration-2.md), not a protocol change.
+[instrument]
+playback = "hold"

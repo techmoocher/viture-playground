@@ -6,28 +6,29 @@
 # and pilot-set values (protocol §4.2, §6, §11). The research team sets the real values
 # (docs/research/phase2-open-questions.md Q2–Q5). Worn use of any profile waits for O3.
 #
-# Trade-off: narrower regions (6–8° wide) need a steadier hold to complete a 500 ms dwell, so expect more
+# Trade-off: narrower regions (9–12° wide) need a steadier hold to complete a 500 ms dwell, so expect more
 # cancelled dwells; worn head motion is not characterised (O3), so how many is unknown.
 [instrument]
 neutral_yaw_deg = 3.0
 hysteresis_deg = 1.0
+# contiguous keys, as in the defaults (MVP iteration 2)
 
 [[instrument.yaw_regions]]
 chord = "C"
-yaw_min_deg = 16.0
+yaw_min_deg = 12.0
 yaw_max_deg = 24.0
 
 [[instrument.yaw_regions]]
 chord = "G"
-yaw_min_deg = 6.0
+yaw_min_deg = 3.0
 yaw_max_deg = 12.0
 
 [[instrument.yaw_regions]]
 chord = "Am"
 yaw_min_deg = -12.0
-yaw_max_deg = -6.0
+yaw_max_deg = -3.0
 
 [[instrument.yaw_regions]]
 chord = "F"
 yaw_min_deg = -24.0
-yaw_max_deg = -16.0
+yaw_max_deg = -12.0

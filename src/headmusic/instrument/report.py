@@ -25,6 +25,13 @@ def _ms(values: list[int]) -> str:
     return (f"n={len(ms)}  p50 {_pct(ms, 0.5):.2f} ms  p95 {_pct(ms, 0.95):.2f} ms  max {max(ms):.2f} ms")
 
 
+def _ms_s(values: list[int]) -> str:
+    if not values:
+        return "—"
+    s = [x / 1e9 for x in values]
+    return f"n={len(s)}  median {_pct(s, 0.5):.2f} s  min {min(s):.2f} s  max {max(s):.2f} s"
+
+
 def summarize(session: Path) -> dict:
     session = Path(session)
     ev = read_jsonl(session / "interaction_events.jsonl")
@@ -39,6 +46,15 @@ def summarize(session: Path) -> dict:
     note_on_lat = [t["estimated_software_latency_ns"] for t in mtiming
                    if t.get("kind") == "note_on" and "estimated_software_latency_ns" in t]
     send_dur = [t["send_end_host_ns"] - t["send_begin_host_ns"] for t in mtiming if "send_end_host_ns" in t]
+    held, on = [], {}
+    for t in mtiming:  # physical note-on → note-off on the chord channel, from the send log
+        if "send_end_host_ns" not in t:
+            continue
+        if t.get("kind") == "note_on":
+            on[t["data1"]] = t["send_end_host_ns"]
+        elif t.get("kind") in ("note_off",) and t["data1"] in on:
+            held.append(t["send_end_host_ns"] - on.pop(t["data1"]))
+    programs = sorted({t["data1"] for t in mtiming if t.get("kind") == "program_change"})
     return {
         "commits": [e["chord"] for e in commits],
         "commits_per_chord": dict(Counter(e["chord"] for e in commits)),
@@ -55,6 +71,10 @@ def summarize(session: Path) -> dict:
         "decision_latency_ns": decision,
         "note_on_estimated_latency_ns": note_on_lat,
         "midi_send_duration_ns": send_dur,
+        "note_held_ns": held,
+        "programs_sent": programs,
+        "dwell_restarts": sum(1 for e in ev if e["event_type"] == "dwell_restart"),
+        "intentional_releases": dict(Counter(e["reason"] for e in ev if e["event_type"] == "chord_release")),
     }
 
 
@@ -70,6 +90,10 @@ def report_text(session: Path) -> str:
         f"- live inputs (logged for replay): {s['live_inputs'] or '—'}",
         f"- disconnects: {s['disconnects']}   panics: {s['panics'] or '—'}",
         f"- chord releases by reason: {s['releases'] or '—'}",
+        f"- releases requested by the FSM (hold exit, R, neutral rest): {s['intentional_releases'] or '—'}",
+        f"- dwell restarts (stability rule): {s['dwell_restarts']}",
+        f"- patch (program change sent): {s['programs_sent'] or 'none: synth default (GM 0, piano, decays)'}",
+        f"- notes held on (note-on to note-off): {_ms_s(s['note_held_ns'])}",
         f"- output errors: {len(s['output_errors'])}   consumer errors: {len(s['consumer_errors'])}",
         "",
         "Timing (ESTIMATED from host timestamps; excludes SDK filter lag, synth and audio device; "
