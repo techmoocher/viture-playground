@@ -10,6 +10,8 @@ Each run below was approved by the operator before it started, with its setup st
 | R2, first attempt | 2026-11-10 | 3, and 2 at 240 Hz | Approved as upright on a rigid stand, untouched; neutral capture at 2 s | **Aborted after 455 s, not stationary: not a characterisation result.**<br>Neutral capture rejected (`dispersion_exceeds_tau_stab`, 7.0° within the 3 s window; tilt 8.8°).<br>The orientation kept moving: the spread within 10 s windows was mostly 1–10°, and 23–56° around 410–440 s. An untouched rigid placement earlier stayed within 0.011°.<br>Stopped on the operator's request by ending the process, so `session.json` has no closing summary. The session's `fixture` / `stationary` labels do not match what was recorded.<br>Timing only, preliminary: 92 259 samples, 202.59 Hz achieved over the run.<br>Session `20261111T031659Z_bench_fixture_0dc0ba01` was deleted on the operator's decision, so the figures above are all that remain. To be repeated with a rigid support agreed with the operator and a placement check before recording |
 | Placement check before R2 | 2026-11-11 | — | Upright on a hard flat table, cable taped; set up by the operator | 15.1 s, nothing recorded: tilt from upright 4.7°; maximum deviation from the mean 0.015° (RMS 0.003°); 0 invalid samples; **1 gap** (≈ 120 samples missing, 194.4 Hz over the check). The check stores no data, so where the gap fell is unknown. It did not recur in R2 |
 | **R2** | 2026-11-11 | 3, and 2 at 240 Hz | Same setup, table untouched; neutral capture at 2 s | **Valid stationary fixture run, 600 s.** Session `20261111T034301Z_bench_fixture_710efe0c`; see "R2 results" below |
+| Placement check before R3 | 2026-11-11 | — | Same setup, untouched since R2 | 15.1 s at 60 Hz, nothing recorded: tilt 4.7°; maximum deviation 0.020° (RMS 0.004°); 0 invalid; 0 gaps; 59.4 Hz |
+| **R3** | 2026-11-11 | 2 at 60 Hz | Same setup, table untouched; neutral capture at 2 s | **Valid stationary fixture run, 300 s.** Session `20261111T040406Z_bench_fixture_0fd7c040`; see "Rate per frequency" below |
 
 ### R2 results (240 Hz requested, upright on a table, stationary, 600 s)
 
@@ -44,6 +46,23 @@ Observations. These are engineering facts about this device, setup and firmware,
 - **Reporting fixes found with this run:**
   - `pipeline seq gaps` had counted the invalid samples, which are kept, not lost. It now uses every sample.
   - Small angles printed as 0.0000. They now show significant digits.
+
+### Rate per frequency (step 2; stationary on the table, pose mode)
+
+| Requested = selected | Run | Duration | Achieved (device / host) | Device intervals (ms: count) | Gaps | Duplicate ts | Arrival residual SD | Jitter RMS (geodesic) | Apparent drift (geodesic) | `r_ref` adopted |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 60 Hz | R3 | 300 s | 59.435 / 59.434 Hz | 16: 4 175 · 17: 12 621 · 18: 1 043 · 19: 5 | 0 | 5 (0.03%) | 0.491 ms | 0.000822° | 0.00293°/min | 59.435 |
+| 90 Hz | R4 | — | — | — | — | — | — | — | — | — |
+| 120 Hz | R5 | — | — | — | — | — | — | — | — | — |
+| 240 Hz | R2 | 600 s | 202.483 / 202.480 Hz | 4: 9 804 · 5: 109 372 · 6: 2 352 | 0 | 61 (0.05%) | 0.438 ms | 0.000768° | 0.00138°/min | 202.483 |
+
+Notes:
+- **R3's own processing used the adaptive gap reference,** because 60 Hz had no `r_ref` yet. Its gaps were re-checked with
+  the candidate 59.435 Hz: still 0, and the stretch is unchanged.
+- **Duplicate timestamps at 60 Hz behave as at 240 Hz:** distinct values, arriving 0.89–1.15 ms after the previous sample.
+- **At 60 Hz the first-difference estimate is 0.00012° (3.3·10⁻⁵° at 240 Hz).** This fits the slow wander seen in R2,
+  because samples are farther apart in time.
+- **The achieved rate is below the requested rate** (59.4 for 60, 202.5 for 240), as in the preliminary runs.
 
 ## Earlier runs (before the approval rule; preliminary)
 

@@ -32,7 +32,9 @@ euler_singular_deg = 89.0      # |display pitch| above this sets euler_near_sing
 # (docs/bench-checklist.md, "Deriving r_ref"). Frequencies without an entry use the adaptive reference.
 # 240: 202.483 from G0 run R2, session 710efe0c (2026-11-11 UTC), stretch 600.2 s, re-checked with this
 #      value (0 gaps). The earlier preliminary value was 202.5 (probe of unknown placement).
+# 60:  59.435 from G0 run R3, session 0fd7c040 (2026-11-11 UTC), stretch 300.2 s, re-checked (0 gaps).
 [flags.r_ref_hz.pose]
+"60" = 59.435
 "240" = 202.483
 
 [flags.r_ref_hz.raw]
