@@ -18,6 +18,7 @@ Each run below was approved by the operator before it started, with its setup st
 | **R5** | 2026-11-11 | 2 at 120 Hz | Same setup, table untouched; neutral capture at 2 s (accepted, 0.0031°) | **Valid stationary fixture run, 300 s.** Session `20261111T042104Z_bench_fixture_bcf348a3`; see "Rate per frequency" below |
 | R6a, first attempt | 2026-11-11 | 4–6 | Flat table, tape lines, wedge; handled by the operator, not worn | **No result: no neutral capture or segment was marked.** The viewer opened at 1000×700 on a 1280×800 screen (752 px usable), so its control bar at the bottom was off-screen. Fixed: the controls are now at the top, the window fits the screen, and each press is confirmed in the window.<br>Kept for the gap observation: 185 s, 36 672 samples, **9 gaps of 295–599 ms (≈ 776 samples missing)**, all while the glasses were being handled. They are in pairs about 0.4–0.8 s apart, a ≈ 600 ms gap then a ≈ 300 ms gap, at 81.8/82.6 s and 98.3/98.7 s. They fit the 297 ms pause at pickup in the earlier viewer run (step 9b). Session `20261111T043318Z_bench_fixture_bdbf687f` |
 | R6a, second attempt | 2026-11-11 | 4–6 | Same; viewer with the controls at the top | **No result: no segment was marked**; the command log holds only 9 neutral captures. The first, on line A, was accepted (0.0029°, tilt 5.1°). Of the other 8, 6 were accepted and 2 rejected (`invalid_samples_in_window`), at tilts from 0.2° to 89.5°. Start/End segment work when invoked directly, so the manual controls were too error-prone while handling the glasses: a label, two clicks per step, and an N shortcut that also fires while typing outside the label box.<br>Replaced by the guided scripts (`view --script r6a`). 0 gaps in 383 s. Session `20261111T043909Z_bench_fixture_026263ce` |
+| **R6a (guided)** | 2026-11-11 | 4–6 | Flat table with tape lines A/B and a wedge; guided script `r6a`; not worn | **Valid.** 1 neutral capture (accepted, 0.22°, tilt 5.4°) and 4 segments; 0 gaps in 165 s; 8 duplicate timestamps. Every sign and axis matches the documented conventions; see "R6a results" below. Session `20261111T045253Z_bench_fixture_c19c4fb1` |
 
 ### R2 results (240 Hz requested, upright on a table, stationary, 600 s)
 
@@ -52,6 +53,33 @@ Observations. These are engineering facts about this device, setup and firmware,
 - **Reporting fixes found with this run:**
   - `pipeline seq gaps` had counted the invalid samples, which are kept, not lost. It now uses every sample.
   - Small angles printed as 0.0000. They now show significant digits.
+
+### R6a results (steps 4–6: axis signs; guided script, movements by hand)
+
+`P_head = conj(q_s) ⊗ q_e` is the head-frame change under the documented reading (SDK quaternion maps head → tracking frame).
+
+| Segment | Hold dispersion start / end | Tilt start → end | Net angle | `P_head` yaw / pitch / roll | `P_head` axis (head frame) | `P_track` axis from vertical |
+|---|---|---|---|---|---|---|
+| `yaw_left_90` (A → B, 90° left) | 0.38° / 0.27° | 4.7° → 10.8° | 91.2° | **+90.50** / 10.84 / −2.15 | (−0.112, 0.074, 0.991) | 4.4° (`P_head` 7.7°) |
+| `yaw_right_90` (B → A) | 0.22° / 0.40° | 6.2° → 5.9° | 90.4° | **−89.83** / 4.98 / 6.84 | (0.103, −0.016, −0.995) | **0.3°** (`P_head` 6.0°) |
+| `pitch_down` (onto the wedge, nose down) | 0.11° / 0.17° | 5.9° → 45.7° | 39.9° | 0.17 / **+39.84** / 1.44 | (0.033, 0.999, −0.008) | 89.2° |
+| `roll_right_down` (onto the wedge, right side down) | 0.37° / 0.83° | 8.4° → 55.0° | 55.7° | −7.37 / −0.34 / **+55.25** | (0.990, −0.070, −0.119) | 74.7° |
+
+- **Steps 4–6 pass under the documented reading:**
+  - a 90° left turn gives +yaw and a right turn −yaw, about ±Z;
+  - nose-down gives +pitch, about +Y;
+  - right side down gives +roll, about +X.
+- **The off-axis parts reflect the hand movements, not the processing.** They are a few degrees, for example 10.8° of pitch
+  at the end of `yaw_left_90`, where the glasses came to rest tilted on line B. The wedge gave about 40° and 55° here,
+  steeper than the 15–25° planned; that does not matter for signs.
+- **Early U1 evidence:** in `yaw_right_90`, a rotation about the vertical with a 6.2° start tilt, `P_track`'s axis is 0.3°
+  from vertical and `P_head`'s 6.0°. That is what the head → tracking reading predicts (`P_head` off vertical by about the
+  start tilt); the inverse reading predicts the reverse. `yaw_left_90` is less clean, because the tilt changed during the
+  turn. The decisive test with a larger tilt is R6b.
+- **The windows were not perfectly still** (dispersion 0.1–0.8°): the glasses settled after being let go. That is small
+  against 40–90° movements.
+- **No gaps occurred while the glasses were handled,** here or in the second R6a attempt (0 in 383 s). The 9 gaps of
+  300–600 ms in the first attempt are therefore not simply caused by handling. To be examined in step 9b.
 
 ### Rate per frequency (step 2; stationary on the table, pose mode)
 

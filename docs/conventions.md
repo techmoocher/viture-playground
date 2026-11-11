@@ -7,8 +7,8 @@ The status column says what is verified and what still needs the G0 bench check 
 | Symbol | Meaning | Status |
 |---|---|---|
 | W | SDK tracking frame, North-West-Up: X "North", Y "West" (left), Z Up. The Pro has no magnetometer (raw magnetometer fields are zero), so "North" is an arbitrary filter heading, not geographic north. In the first probe, yaw read −130.8° at stream start, so the heading is not zeroed per session | NWU per SDK docs; heading behaviour unverified |
-| H | Glasses (head-mounted device) body frame: X forward through the lenses, Y left, Z up when worn level | Inferred from the SDK demo; **G0 check** |
-| `q_WH` | SDK pose quaternion, assumed to rotate H-frame vectors into W | **Unverified (G0 check U1)** |
+| H | Glasses (head-mounted device) body frame: X forward through the lenses, Y left, Z up when worn level | **Consistent with G0 run R6a (2026-11-11)**: yaw about ±Z, nose-down pitch about +Y, right-down roll about +X, each within about 7° (hand movements, not a precision fixture). Read under the `q_WH` reading below |
+| `q_WH` | SDK pose quaternion, assumed to rotate H-frame vectors into W | **Supported, not yet confirmed (U1).** In R6a `yaw_right_90` (rotation about the vertical from a 6.2° tilt), `P_track` was 0.3° from vertical and `P_head` 6.0°, as this reading predicts; the inverse predicts the reverse. The margin is small; the decisive test is R6b (wedge) |
 | `q0` | Accepted neutral reference: a `q_WH` value, per connection | — |
 | `q_rel` | `conj(q0) ⊗ q_WH`: head orientation relative to the neutral reference, in the neutral head frame (protocol §2.2) | — |
 | `q_TH` | Head relative to torso. **Not available**: it needs a torso sensor in the same frame. No field carries this meaning | Protocol §2.2 |
@@ -39,7 +39,7 @@ pitch θ = asin ( clamp( 2(w·y − z·x), −1, 1 ) )      ∈ [−90°, 90°]
 roll  φ = atan2( 2(w·x + y·z), 1 − 2(x² + y²) )     ∈ (−180°, 180°]
 ```
 
-- **Signs (right-handed NWU, no flips in data):** +yaw = turn left, +pitch = nose down, +roll = right ear down. The viewer adds direction words. These are unit-tested mathematically; **the physical signs need the G0 check**.
+- **Signs (right-handed NWU, no flips in data):** +yaw = turn left, +pitch = nose down, +roll = right ear down. The viewer adds direction words. These are unit-tested mathematically; **physical signs confirmed in G0 run R6a (2026-11-11)**: 90° left turn +90.5°, right turn −89.8°, nose-down +39.8°, right side down +55.3°.
 - **Singularity:** |θ| > 89° sets `euler_near_singular`, a numeric guard only.
 - **Use:** display and diagnostics only. All computation uses quaternions.
 - **Parameterisation:** Euler interaction products must not be read as anatomical coupling ([threats-to-validity.md](threats-to-validity.md), TV1).
