@@ -7,6 +7,12 @@
 
 **Every angle and time below is a provisional engineering default**, not an ergonomic claim. No participant or research data is collected in Phase 2.
 
+**Running the commands:** `headmusic` is installed in the project's virtual environment, not system-wide. In a new PowerShell terminal at the repository root, either:
+- call it by path, `.venv\Scripts\headmusic <command> …`; or
+- activate the environment once with `.venv\Scripts\Activate.ps1`, then use `headmusic …` as written below.
+
+If PowerShell blocks the activation script, call the command by path; changing the execution policy is the operator's decision.
+
 ## 1. Readiness of `phase2/2c-play-app`
 
 | Item | State |
