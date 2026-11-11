@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "headmusic"
+version = "0.1.0"
+description = "Phase 1 hardware foundation: VITURE Pro head-orientation acquisition, processing, recording and replay"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+plots = ["matplotlib>=3.8"]
+
+[project.scripts]
+headmusic = "headmusic.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+headmusic = ["defaults.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = ["hardware: needs the connected VITURE glasses; run with --hardware"]

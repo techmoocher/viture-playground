@@ -1,0 +1,25 @@
+# --- Proprietary vendor SDK (licence forbids redistribution) -------------------
+/sdk/
+/vendor/
+
+# --- Recorded data, exports and replays (may later contain participant data) ---
+# Anchored to the repository root so tests/data/ (small committed fixtures) is not ignored.
+/data/
+/exports/
+
+# --- Local configuration and secrets -------------------------------------------
+.claude/settings.local.json
+*.local.toml
+.env
+
+# --- Build output ----------------------------------------------------------------
+native/build/
+build/
+dist/
+*.egg-info/
+
+# --- Python ----------------------------------------------------------------------
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
