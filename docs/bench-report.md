@@ -22,6 +22,7 @@ Each run below was approved by the operator before it started, with its setup st
 | **R6b (guided)** | 2026-11-11 | 7 (U1) | Glasses fixed on the wedge (~55° tilt); the whole wedge turned on the table; guided script `r6b`; not worn | **U1 resolved: the SDK quaternion maps head → tracking frame (`q_WH`)**, as the processing assumes. 2 segments, 0 gaps, 4 duplicate timestamps; see "R6b results" below. Session `20261111T045720Z_bench_fixture_e7add480` |
 | **R6c (guided)** | 2026-11-11 | 8 (recenter) | Flat table; guided script `r6c`; not worn | **Step 8 passes.** Neutral 1 accepted (0.0097°, tilt 5.1°), turn of 45.5° (`P_head` yaw +45.34°), neutral 2 accepted (0.105°, tilt 5.8°). At the switch to neutral 2 (seq 12446, the first sample after its window), the raw stream steps by 0.0015°, which is normal, so there is no jump. The relative orientation changes from (45.0, 2.1, −3.0)° to (0.0, 0.08, 0.05)°, and `neutral_calibration_id` goes 1 → 2. **4 gaps** of 296–599 ms; see "Gap pattern" below. Session `20261111T050010Z_bench_fixture_2dc3a853` |
 | **R7 (guided)** | 2026-11-11 | 9 (unplug / replug) | Glasses untouched on the table; USB cable unplugged at the PC end for ~5 s; guided script `r7` | **Step 9 passes.**<br>Last sample at 38.11 s, `stale_begin` at 38.22 s, `device_disconnected` (`usb_device_removed`, teardown 14 ms) at 39.12 s, then `waiting_for_device`. `device_connected` with **connection 2** at 47.53 s (outage 9.4 s, including ~5 s unplugged). No samples during the outage, and no pipeline seq gap.<br>Neutral 1 (connection 1) does not carry over. Connection 2 is `no_neutral`, so the gate is not usable, until neutral 2 is accepted on it (0.0057°).<br>**The device clock restarts on replug** (13 228 s → 3.34 s). The processor resets its timestamp reference per connection, so no false `ts_backward` or gap was flagged.<br>SDK log: "Failed to send USB command - MsgID 0x0015, error -1" at removal, and "m_StateCallback is not initialized" ×2 during reconnect; streaming worked. One 52 ms gap 2.7 s after reconnect. Teardown on stop took 2.0 s.<br>Session `20261111T050317Z_bench_fixture_1bfcd8f1` |
+| **R8 (guided)** | 2026-11-11 | 9b (pause causes) | Glasses on line A; guided script `r8`: cable moved at the PC end, a hand near the lenses, the glasses lifted and put back; not worn | **Moving the cable at the PC end caused a full USB disconnect** 14 s into `cable_move`: last sample at 22.29 s, `device_disconnected` (`usb_device_removed`) at 23.31 s, reconnected as connection 2 at 34.47 s (11.2 s outage; the device clock restarted, so the glasses power-cycled). Then gaps of 9 ms and 51 ms, 0.1 s and 2.4 s after reconnect.<br>`hand_near` (49 s): **0 gaps**. `lift_and_back` (20 s): **0 gaps**. The 300/600 ms pauses were not reproduced. Session `20261111T050559Z_bench_fixture_1219e7c9` |
 
 ### R2 results (240 Hz requested, upright on a table, stationary, 600 s)
 
@@ -112,14 +113,24 @@ The inverse reading predicts the reverse. See bench-checklist.md, "Reading the U
 | R6b (92 s) | Wedge turned | none |
 | R6c (65 s) | Handled | 4: 599 ms at 2.2 s (before any command); 296 ms at 19.3 s (between the neutral and the turn); 599 + 297 ms at 31.2/31.8 s (during the turn) |
 | Earlier viewer run (preliminary) | Picked up | 1: 297 ms at the pickup |
+| R7 (unplug test) | Untouched, cable unplugged and replugged | 1: 52 ms, 2.7 s after reconnect |
+| R8 (step 9b) | Cable moved at the PC end, hand near, lifted | Cable: **full disconnect** (11 s), then 9 ms and 51 ms after reconnect. Hand near: none. Lift and back: none |
 
 Observations. These are engineering observations; the cause is not established:
 - **The gaps last about 300 ms or about 600 ms, never in between.**
 - **The device timestamp jumps by the same amount as the host time.** So the device produced no samples in that time.
   This is not delivery delay on the PC side, which would show as a burst of late samples with continuous device timestamps.
 - **They occur only in handled sessions, but not in every one.**
-- **Two candidate causes for step 9b to tell apart:** movement of the USB cable, and something on the device reacting
-  to a hand nearby. The VITURE Pro is not documented here as having a wear sensor, so this is only a hypothesis to test.
+- **Step 9b (R8) tested two candidate causes:**
+  - **A hand near the lenses and nose bridge** gave no gaps, so it is not supported as a cause.
+  - **Moving the cable at the PC end** caused a full disconnect rather than a pause, so the USB connection is
+    sensitive to cable movement.
+
+  The 300/600 ms pauses were not reproduced on demand. A cable or connector disturbance remains the more plausible
+  explanation, since handling also moves the cable at the glasses end, but it is **not established**.
+- **A short gap a few seconds after (re)connecting is reproducible:** 52 ms at 2.7 s in R7, 51 ms at 2.4 s in R8.
+- **Practical consequence for worn use:** head movement moves the cable. Expect occasional pauses and possibly
+  disconnects, depending on the cable, the port and strain relief. Disconnect handling during a block is open item O5.
 - **Relevance for later phases:** a 300–600 ms pause makes the tracking gate stale (> 100 ms). So it must never produce
   a musical command, and gesture state must reset. The processing flags it as `gap_before`.
 
