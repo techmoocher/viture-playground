@@ -9,6 +9,14 @@
 
 Commands are positioned between samples by the queue order, logged with `after_seq`, and
 re-injected at the same place on replay, so processing is deterministic.
+
+Consumers (Phase 2, optional) run in the pipeline thread after the gate, in processing order:
+    on_sample(ps)          every processed pose sample (after gate.on_sample and calibration records)
+    on_event(e)            every event (after gate.on_event)
+    on_command(c)          every command (before the processor's immediate records)
+    on_calibration(rec)    every neutral-capture record
+    on_tick(now)           after each item and on each idle queue timeout (live staleness between samples)
+With no consumers, behaviour and outputs are exactly those of Phase 1.
 """
 from __future__ import annotations
 
@@ -29,7 +37,7 @@ _STOP = object()
 class Pipeline:
     def __init__(self, cfg: dict, processor: OrientationProcessor, gate: TrackingGate,
                  writer: Optional[SessionWriter], clock: Optional[Callable[[], int]], history_s: float = 12.0,
-                 fixed_stream_config: Optional[dict] = None) -> None:
+                 fixed_stream_config: Optional[dict] = None, consumers: Optional[list] = None) -> None:
         """clock=None: virtual time = host time of the last processed sample (offline processing)."""
         self.cfg = cfg
         self.processor = processor
@@ -45,6 +53,7 @@ class Pipeline:
         self._last_rx: Optional[int] = None
         self._stale = False
         self._fixed_stream_config = fixed_stream_config
+        self.consumers: list = list(consumers or [])
         self.t_stale_ns = int(cfg["gate"]["t_stale_ms"] * 1_000_000)
         self.stats = {"pose_samples": 0, "imu_samples": 0, "valid": 0, "invalid": 0, "gaps": 0,
                       "est_missing": 0, "neutral_attempts": 0, "neutral_accepted": 0, "max_queue": 0,
@@ -72,6 +81,10 @@ class Pipeline:
         if self._thread:
             self._thread.join(timeout)
 
+    def tick(self) -> None:
+        """Evaluate staleness now (idle timeout). Public for tests that simulate live timing."""
+        self._check_stale()
+
     def process_all(self, items) -> None:
         """Synchronous processing (replay --reprocess, tests)."""
         for item in items:
@@ -82,7 +95,7 @@ class Pipeline:
             try:
                 item = self.q.get(timeout=0.02)
             except queue.Empty:
-                self._check_stale()
+                self.tick()
                 continue
             if item is _STOP:
                 return
@@ -118,6 +131,8 @@ class Pipeline:
         if ps.valid:
             self._last_rx = ps.host_rx_monotonic_ns
         self._records(records)
+        for c in self.consumers:
+            c.on_sample(ps)
         with self._lock:
             st = self.stats
             st["pose_samples"] += 1
@@ -132,6 +147,8 @@ class Pipeline:
         for r in records:
             if self.writer:
                 self.writer.write_calibration(r)
+            for c in self.consumers:
+                c.on_calibration(r)
             with self._lock:
                 self.stats["neutral_attempts"] += 1
                 self.stats["neutral_accepted"] += 1 if r.get("accepted") else 0
@@ -142,12 +159,16 @@ class Pipeline:
             c.after_seq = self._last_seq
         if self.writer:
             self.writer.write_command(c)
+        for consumer in self.consumers:
+            consumer.on_command(c)
         self._records(self.processor.handle_command(c))
 
     def _on_event(self, e: Event) -> None:
         if self.writer:
             self.writer.write_event(e, self._last_seq)
         self.gate.on_event(e)
+        for c in self.consumers:
+            c.on_event(e)
         with self._lock:
             if e.kind != "sdk_log":
                 self.stats["last_event"] = (e.kind, e.data)
@@ -184,6 +205,10 @@ class Pipeline:
         return info
 
     def _check_stale(self) -> None:
+        if self.consumers:
+            now = self.clock()
+            for c in self.consumers:
+                c.on_tick(now)
         if self._last_rx is None:
             return
         now = self.clock()

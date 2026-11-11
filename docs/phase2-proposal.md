@@ -1,7 +1,7 @@
 # Phase 2 — Playable Four-Chord Instrument: Engineering Proposal
 
 **Revision:** 2 (2026-11-11). It incorporates your Phase 2 brief (§0). Revision 1 is in this file's git history.
-**Status:** approved direction. Milestone **2A is in progress**; 2B–2D follow in order (§7).
+**Status:** approved direction. **2A implemented** (gesture FSM, logs, replay; see [instrument.md](instrument.md)); 2B–2D follow in order (§7).
 **Scope:** a playable, real-time, head-controlled instrument with four chords (C, G, Am, F) on the Phase 1 pipeline. No comfort models, no participant calibration, no formal experiments and no ML (§8).
 
 **Every angle, time and radius in this document and in `defaults.toml` is a provisional engineering default.** Each one is configurable and recorded in `session.json`. None is an ergonomic, comfort or safety claim, and none is validated. The fixture results from G0 describe the device on a table, **not** worn use or usability.
@@ -139,7 +139,7 @@ The protocol's `committed` state is the instant of the commit. It is logged as t
 | `rearm_hold_ms` | 0 | Entering the neutral zone re-arms. Any hold is a research choice |
 | `max_elevation_deg` | 89.0 | Numeric guard (§3.1) |
 | `reset_on_gap_before` | true | §4.1 |
-| `allow_same_chord_recommit` | true | §3.3 |
+| `allow_same_chord_recommit` | true | §3.3. Implemented in the chord engine (2B, `[music]`): the FSM always reports the commit |
 | `start_enabled` | true | — |
 
 ---

@@ -249,6 +249,30 @@ def _wait_recording(pipe: Pipeline, source, args, stop: threading.Event) -> None
             return
 
 
+# --------------------------------------------------------------------------- instrument (Phase 2)
+def _instrument_cfg(cfg: dict) -> dict:
+    """The instrument section of a (possibly Phase 1) config snapshot, else today's defaults."""
+    return cfg if cfg.get("instrument") else {**cfg, "instrument": load_config()["instrument"]}
+
+
+def _attach_instrument(cfg: dict, gate, writer, clock=None, recorded_inputs=None):
+    from headmusic.instrument.consumer import InstrumentConsumer
+    from headmusic.instrument.fsm import GestureFSM
+    from headmusic.instrument.log import InteractionLog
+    from headmusic.instrument.regions import InstrumentConfig
+    icfg = InstrumentConfig.from_config(cfg)
+    log = InteractionLog(writer.dir, write_timing=recorded_inputs is None and clock is not None) if writer else None
+    if writer:
+        writer.update_meta(instrument=icfg.to_meta())
+    return InstrumentConsumer(GestureFSM(icfg), gate, log, clock=clock, recorded_inputs=recorded_inputs), log
+
+
+def _close_instrument(consumer, log) -> None:
+    consumer.finish()
+    if log:
+        log.close()
+
+
 # --------------------------------------------------------------------------- replay
 def cmd_replay(args) -> int:
     from headmusic.acquisition.replay_source import ReplaySource
@@ -264,9 +288,18 @@ def cmd_replay(args) -> int:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         out = Path(args.out) if args.out else Path(args.data) / "replays" / f"{src_dir.name}_reprocessed_{stamp}"
         writer = SessionWriter(out, meta, cfg["io"]["flush_interval_s"], write_raw_pose=False)
-        pipe = Pipeline(cfg, processor, gate, writer, clock=None, fixed_stream_config=src.stream_config)
+        consumers, inst = [], None
+        if args.instrument:
+            from headmusic.instrument.log import read_inputs
+            cfg = _instrument_cfg(cfg)
+            inst = _attach_instrument(cfg, gate, writer, recorded_inputs=read_inputs(src_dir))
+            consumers.append(inst[0])
+        pipe = Pipeline(cfg, processor, gate, writer, clock=None, fixed_stream_config=src.stream_config,
+                        consumers=consumers)
         t0 = time.perf_counter()
         pipe.process_all(src.items())
+        if inst:
+            _close_instrument(*inst)
         writer.close()
         dt = time.perf_counter() - t0
         a, b = src_dir / "processed_pose.csv", out / "processed_pose.csv"
@@ -276,7 +309,12 @@ def cmd_replay(args) -> int:
             same_cal = _sha256(src_dir / "calibration_neutral.jsonl") == _sha256(out / "calibration_neutral.jsonl")
             print(f"processed_pose.csv identical to the original: {same}")
             print(f"calibration_neutral.jsonl identical to the original: {same_cal}")
-            return 0 if (same and same_cal) else 3
+            same_int = True
+            orig_int = src_dir / "interaction_events.jsonl"
+            if args.instrument and orig_int.exists():
+                same_int = _sha256(orig_int) == _sha256(out / "interaction_events.jsonl")
+                print(f"interaction_events.jsonl identical to the original: {same_int}")
+            return 0 if (same and same_cal and same_int) else 3
         return 0
     speed = 1.0 if args.speed == "max" and args.view else (None if args.speed == "max" else float(args.speed))
     src = ReplaySource(src_dir, speed=speed)
@@ -325,10 +363,16 @@ def cmd_synth(args) -> int:
     out = Path(args.out) if args.out else Path(args.data) / "sessions" / session_dir_name(meta)
     writer = SessionWriter(out, meta, cfg["io"]["flush_interval_s"])
     processor = OrientationProcessor(ProcessorConfig.from_config(cfg))
-    pipe = Pipeline(cfg, processor, TrackingGate.from_config(cfg), writer, clock=None,
-                    fixed_stream_config=stream)
+    gate = TrackingGate.from_config(cfg)
+    inst = _attach_instrument(cfg, gate, writer) if args.instrument else None
+    pipe = Pipeline(cfg, processor, gate, writer, clock=None, fixed_stream_config=stream,
+                    consumers=[inst[0]] if inst else [])
     writer.update_meta(processing=pipe.stream_info, imu={"frequency_selected_hz": 240})
     pipe.process_all(trace.items())
+    if inst:
+        _close_instrument(*inst)
+        commits = [e["chord"] for e in inst[0].events if e["event_type"] == "raw_commit"]
+        print(f"instrument commits: {commits}")
     writer.close()
     print(f"synthetic '{args.scenario}' session: {out} ({pipe.stats['pose_samples']} samples)")
     return 0
@@ -381,6 +425,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--speed", default="1", help="playback speed factor, or 'max'")
     p.add_argument("--view", action="store_true")
     p.add_argument("--reprocess", action="store_true", help="re-run processing offline and compare with the original")
+    p.add_argument("--instrument", action="store_true",
+                   help="with --reprocess: also run the Phase 2 gesture FSM (and compare interaction_events.jsonl)")
     p.add_argument("--out")
     p = sub.add_parser("analyze", help="timing / jitter / drift report")
     p.add_argument("session")
@@ -392,7 +438,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out")
     p = sub.add_parser("synth", help="write a deterministic synthetic session")
     p.add_argument("scenario", choices=["stationary", "sign_flip", "yaw_wrap", "dropped", "sustained_loss",
-                                        "faults", "reconnect"])
+                                        "faults", "reconnect", "chords"])
+    p.add_argument("--instrument", action="store_true", help="also run the Phase 2 gesture FSM")
     p.add_argument("--out")
     return ap
 

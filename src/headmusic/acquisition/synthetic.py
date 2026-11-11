@@ -166,8 +166,44 @@ def scenario_reconnect() -> Trace:
     return Trace(a + b, [capture_command(10, window_s=1.0)], ev, {"scenario": "reconnect", "split_seq": len(a)})
 
 
+# ---------------------------------------------------------------------------- Phase 2: head-motion scripts
+MOTION_BASE = quat_from_zyx(-130.0, 3.0, -2.0)  # arbitrary tracking-frame heading of the neutral pose
+
+
+def keyframes(keys: list[tuple[float, float]], pitch_keys: Optional[list[tuple[float, float]]] = None,
+              base: Quat = MOTION_BASE) -> Callable[[float], Quat]:
+    """Piecewise-linear yaw (and optional pitch) in degrees relative to `base`: q_WH = base ⊗ R_zyx(yaw, pitch, 0).
+
+    With a neutral captured at yaw = pitch = 0, q_rel is R_zyx(yaw, pitch, 0) and yaw_rel = yaw."""
+    def interp(ks, t):
+        if t <= ks[0][0]:
+            return ks[0][1]
+        for (t0, v0), (t1, v1) in zip(ks, ks[1:]):
+            if t <= t1:
+                return v0 + (v1 - v0) * (t - t0) / (t1 - t0) if t1 > t0 else v1
+        return ks[-1][1]
+    return lambda t: mul(base, quat_from_zyx(interp(keys, t), interp(pitch_keys, t) if pitch_keys else 0.0, 0.0))
+
+
+def chord_tour(yaws=(31.0, 13.0, -13.0, -31.0), t0: float = 1.5, move: float = 0.3, hold: float = 0.8,
+               rest: float = 0.6) -> tuple[list[tuple[float, float]], float]:
+    """Neutral for t0 s, then for each yaw: move there, hold, move back, rest at neutral."""
+    keys, t = [(0.0, 0.0), (t0, 0.0)], t0
+    for y in yaws:
+        keys += [(t + move, y), (t + move + hold, y), (t + 2 * move + hold, 0.0), (t + 2 * move + hold + rest, 0.0)]
+        t += 2 * move + hold + rest
+    return keys, t
+
+
+def scenario_chords() -> Trace:
+    """Neutral capture, then one held visit to each default chord region (C, G, Am, F) with returns."""
+    keys, end = chord_tour()
+    s = generate(end + 0.5, orientation=keyframes(keys))
+    return Trace(s, [capture_command(20, window_s=0.5)], [connected_event(1)], {"scenario": "chords"})
+
+
 SCENARIOS = {
     "stationary": scenario_stationary, "sign_flip": scenario_sign_flip, "yaw_wrap": scenario_yaw_wrap,
     "dropped": scenario_dropped, "sustained_loss": scenario_sustained_loss, "faults": scenario_faults,
-    "reconnect": scenario_reconnect,
+    "reconnect": scenario_reconnect, "chords": scenario_chords,
 }
