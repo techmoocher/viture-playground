@@ -1,7 +1,7 @@
 # Phase 2 — Playable Four-Chord Instrument: Engineering Proposal
 
 **Revision:** 2 (2026-11-11). It incorporates your Phase 2 brief (§0). Revision 1 is in this file's git history.
-**Status:** approved direction. **2A implemented** ([instrument.md](instrument.md)); **2B implemented** ([music.md](music.md)); 2C–2D follow (§7).
+**Status:** approved direction. **2A implemented** ([instrument.md](instrument.md)); **2B implemented** ([music.md](music.md)); **2C implemented** ([play.md](play.md)); 2D needs your approval for each hardware run, and worn tests wait for O3 (§7).
 **Scope:** a playable, real-time, head-controlled instrument with four chords (C, G, Am, F) on the Phase 1 pipeline. No comfort models, no participant calibration, no formal experiments and no ML (§8).
 
 **Every angle, time and radius in this document and in `defaults.toml` is a provisional engineering default.** Each one is configurable and recorded in `session.json`. None is an ergonomic, comfort or safety claim, and none is validated. The fixture results from G0 describe the device on a table, **not** worn use or usability.

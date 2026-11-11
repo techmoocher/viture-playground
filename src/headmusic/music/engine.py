@@ -83,6 +83,10 @@ class ChordEngine:
 
     # ------------------------------------------------------------------ instrument events
     def on_interaction(self, e: InteractionEvent, event_id: int) -> None:
+        with self._lock:  # the play window may call panic() from the UI thread
+            self._on_interaction(e, event_id)
+
+    def _on_interaction(self, e: InteractionEvent, event_id: int) -> None:
         if self.stopped:
             return
         t = e.event_type
