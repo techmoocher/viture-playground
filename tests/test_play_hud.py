@@ -114,3 +114,30 @@ def test_play_window_draws_and_sends_only_commands():
     finally:
         app.root.destroy()
         stack.close("test")
+
+
+def test_emergency_stop_fallback_silences_when_the_pipeline_does_not_act():
+    """Esc enqueues panic; if the pipeline thread is stuck, the window silences the engine directly."""
+    tk = pytest.importorskip("tkinter")
+    cfg = load_config()
+    gate = TrackingGate.from_config(cfg)
+    stack = build_stack(cfg, gate, audio="null")
+    pipe = Pipeline(cfg, OrientationProcessor(ProcessorConfig.from_config(cfg)), gate, None, clock=None,
+                    fixed_stream_config={"selected_hz": 240, "reference_rate_hz": 202.5}, consumers=stack.consumers)
+    pipe.process_all(syn.scenario_chords().items()[: int(2.5 * 202.5)])  # C sounding
+    from headmusic.viewer.play import PlayApp
+    try:
+        app = PlayApp(pipe, stack, "test", on_close=lambda: None)
+    except tk.TclError as e:
+        pytest.skip(f"no display: {e}")
+    try:
+        app.emergency_stop()  # the queued panic is never processed: the pipeline is "stuck"
+        assert stack.engine.snapshot()["chord"] == "C"
+        app._stop_fallback()  # what the window runs fallback_ms later
+        assert stack.engine.snapshot()["chord"] is None
+        m = stack.engine.backend.messages
+        assert {(0x80, n, 0) for n in (60, 64, 67)} <= set(m) and (0xB0, 123, 0) in m
+        assert stack.engine.events[-1]["event_type"] == "panic" and stack.engine.events[-1]["reason"] == "ui_direct"
+    finally:
+        app.root.destroy()
+        stack.close("test")

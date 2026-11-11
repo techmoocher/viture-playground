@@ -202,8 +202,34 @@ def scenario_chords() -> Trace:
     return Trace(s, [capture_command(20, window_s=0.5)], [connected_event(1)], {"scenario": "chords"})
 
 
+def scenario_chords_faults() -> Trace:
+    """Demo of the safety behaviour, with G0 fault patterns in the default chord tour:
+    - C commits, then a 300 ms device pause while C sounds and the head stays in C: C is released, no re-commit;
+    - a duplicate device timestamp during the G dwell: the dwell is cancelled, G is not played this visit;
+    - Am plays normally;
+    - a disconnect during the F dwell, reconnect (device clock restarts) with the head still at F: nothing plays
+      until a new neutral is captured and the head returns to neutral; then F plays."""
+    rate = 202.5
+    keys, end = chord_tour()
+    s = generate(end, orientation=keyframes(keys))
+    i_g = int(4.0 * rate)  # during the G hold (G from ~3.8 s to ~4.6 s)
+    s[i_g] = with_device_ts(s[i_g], s[i_g - 1].device_ts_raw)
+    a, n = int(2.45 * rate), int(0.3 * rate)
+    s = s[:a] + s[a + n:]
+    cut = int(8.15 * rate) - n  # during the F dwell
+    first = resequence(s[:cut])
+    keys2 = [(0.0, -31.0), (2.0, -31.0), (2.4, 0.0), (4.0, 0.0), (4.3, -31.0), (5.3, -31.0), (5.6, 0.0)]
+    second = generate(6.0, orientation=keyframes(keys2), connection_id=2, seq0=len(first),
+                      device_t0=3_000_000_000, host_t0=first[-1].host_rx_monotonic_ns + 5_000_000_000)
+    ev = [connected_event(1), Event("device_disconnected", 0, {"connection_id": 1, "last_seq": len(first) - 1}),
+          connected_event(2, last_seq=len(first) - 1)]
+    cmds = [capture_command(20, window_s=0.5), capture_command(len(first) + int(2.8 * rate), window_s=0.5)]
+    return Trace(first + second, cmds, ev, {"scenario": "chords_faults"})
+
+
 SCENARIOS = {
     "stationary": scenario_stationary, "sign_flip": scenario_sign_flip, "yaw_wrap": scenario_yaw_wrap,
     "dropped": scenario_dropped, "sustained_loss": scenario_sustained_loss, "faults": scenario_faults,
     "reconnect": scenario_reconnect, "chords": scenario_chords,
+    "chords_faults": scenario_chords_faults,
 }

@@ -63,6 +63,7 @@ Research protocol: [docs/research/](docs/research/).
 | `headmusic replay <session> --instrument --speed 1` | Phase 2: real-time replay through the instrument with sound (Windows MIDI) |
 | `headmusic play` | Phase 2: live four-chord instrument with the play window (Esc = emergency stop); hardware runs need the operator's approval, worn use waits for O3 |
 | `headmusic replay <session> --instrument --view --speed 1` | Phase 2: replay through the instrument with the play window and sound |
+| `headmusic instrument-report <session>` | Phase 2: commits, cancels, resets, estimated software timing |
 | `headmusic midi-devices` / `headmusic midi-test` | Phase 2: list MIDI outputs / play C, G, Am, F once (sound check, no glasses) |
 
 Sessions are written to `data/sessions/` (git-ignored). Run commands with `.venv\Scripts\python -m headmusic …`
@@ -87,6 +88,7 @@ Unit tests need no glasses. Hardware tests are opt-in; run them only with the gl
 | [quality-and-metrics.md](docs/quality-and-metrics.md) | Sample flags, tracking gate, neutral capture, metric definitions, provisional parameters |
 | [data-format.md](docs/data-format.md) | Session files, columns, mapping to protocol §10, export |
 | [instrument.md](docs/instrument.md) | Phase 2 gesture state machine: regions, states, resets, logs |
+| [phase2d-guide.md](docs/phase2d-guide.md) | Phase 2D: demos, emergency-stop evidence, angle review, live smoke-test plan, issue log, merge procedure |
 | [play.md](docs/play.md) | Phase 2 play window, keys, emergency stop, `headmusic play` |
 | [music.md](docs/music.md) | Phase 2 chord engine: MIDI, interruptions, panic, accompaniment, logs |
 | [phase2-proposal.md](docs/phase2-proposal.md) | Phase 2 design and milestones 2A–2D |

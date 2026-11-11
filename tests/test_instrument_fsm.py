@@ -346,3 +346,16 @@ def test_random_motion_with_random_faults_keeps_the_invariant(seed):
             d.sample(yaw)
     n = check_invariant(d)
     assert n >= 1  # the walk does commit sometimes, so the check is not vacuous
+
+
+# ---------------------------------------------------------------------------- known limitation (2D finding)
+@pytest.mark.parametrize("deg_per_s, commits_g", [(40.0, False), (25.0, False), (18.0, True)])
+def test_slow_turn_through_an_inner_region_commits_it(deg_per_s, commits_g):
+    """With four chords on one yaw axis, reaching an outer chord (C) passes through an inner one (G, 10° wide).
+    A turn slower than width / dwell = 10° / 0.5 s = 20°/s stays in G long enough to commit it. Documented in
+    docs/phase2d-guide.md (U1); the layout and dwell are research decisions (Q2, Q3)."""
+    d = Driver()
+    d.arm()
+    d.move(0.0, YAW["C"], 1000 * YAW["C"] / deg_per_s)
+    d.hold(YAW["C"], 700)
+    assert ("G" in d.commits()) is commits_g

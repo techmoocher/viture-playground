@@ -230,14 +230,22 @@ def cmd_play(args) -> int:
     from headmusic.acquisition.capture_shim import CaptureShim
     from headmusic.acquisition.viture_source import VitureSdkSource
     from headmusic.music.config import midi_device_arg
+    if args.mounting == "worn" and not args.o3_cleared:
+        print("refusing --mounting worn: worn use waits for open item O3 (faculty/IRB guidance on developer "
+              "self-testing). If O3 has been resolved, add --o3-cleared; the session is then labelled as worn "
+              "developer self-test data (no participants, no research data).", file=sys.stderr)
+        return 2
     cfg = _cfg(args)
     sdk = _sdk(args)
     shim = CaptureShim(args.shim)
     clock = time.perf_counter_ns
     writer = None
     if args.record:
+        notes = args.notes or ""
+        if args.mounting == "worn":
+            notes = ("[worn developer self-test under O3 guidance; not participant or research data] " + notes).strip()
         meta = new_session_meta(cfg, condition="bench", mounting=args.mounting, source_kind="live", argv=sys.argv,
-                                notes=args.notes or "",
+                                notes=notes,
                                 extra_files={"glasses_dll": sdk.dll_path, "capture_shim_dll": shim.path})
         out = Path(args.data) / "sessions" / session_dir_name(meta)
         writer = SessionWriter(out, meta, cfg["io"]["flush_interval_s"])
@@ -325,6 +333,16 @@ def _wait_recording(pipe: Pipeline, source, args, stop: threading.Event) -> None
 def _stack(cfg: dict, gate, writer=None, **kw):
     from headmusic.stack import build_stack
     return build_stack(cfg, gate, writer, **kw)
+
+
+def cmd_instrument_report(args) -> int:
+    from headmusic.instrument.report import report_text
+    text = report_text(Path(args.session))
+    out = Path(args.session) / "analysis"
+    out.mkdir(exist_ok=True)
+    (out / "instrument_report.md").write_text(text, encoding="utf-8")
+    print(text)
+    return 0
 
 
 def cmd_midi_devices(args) -> int:
@@ -541,6 +559,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-keep-awake", dest="keep_awake", action="store_false",
                    help="do not ask Windows to stay awake while playing")
     p.add_argument("--close-after", type=float, help="close after S seconds (unattended checks)")
+    p.add_argument("--o3-cleared", action="store_true",
+                   help="required with --mounting worn: confirms open item O3 has been resolved")
 
     p = sub.add_parser("replay", help="replay a recorded session without glasses")
     p.add_argument("session")
@@ -561,6 +581,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("export", help="denormalised per-row export (protocol §10 fields)")
     p.add_argument("session")
     p.add_argument("--out")
+    p = sub.add_parser("instrument-report", help="Phase 2 session summary: commits, resets, estimated timing")
+    p.add_argument("session")
     p = sub.add_parser("midi-devices", help="list Windows MIDI output devices")
     p = sub.add_parser("midi-test", help="play C, G, Am, F once through the chord engine (sound check, no glasses)")
     p.add_argument("--audio", choices=["winmm", "null"], default="winmm")
@@ -568,7 +590,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seconds", type=float, default=0.8)
     p = sub.add_parser("synth", help="write a deterministic synthetic session")
     p.add_argument("scenario", choices=["stationary", "sign_flip", "yaw_wrap", "dropped", "sustained_loss",
-                                        "faults", "reconnect", "chords"])
+                                        "faults", "reconnect", "chords", "chords_faults"])
     p.add_argument("--instrument", action="store_true", help="also run the Phase 2 gesture FSM")
     p.add_argument("--out")
     return ap
@@ -585,7 +607,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "record": lambda a: _live(a, view=False),
             "view": lambda a: _live(a, view=True), "replay": cmd_replay, "analyze": cmd_analyze,
             "export": cmd_export, "synth": cmd_synth, "midi-devices": cmd_midi_devices, "midi-test": cmd_midi_test,
-            "play": cmd_play}
+            "play": cmd_play, "instrument-report": cmd_instrument_report}
     return cmds[args.cmd](args)
 
 

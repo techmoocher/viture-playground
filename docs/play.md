@@ -13,7 +13,7 @@ The integrated instrument: glasses → pipeline → gesture FSM ([instrument.md]
 | `headmusic replay <session> --instrument --view --speed 1` | Replays a recorded session through the instrument, with the play window and sound. No glasses needed |
 | `headmusic synth chords --instrument` | Writes a synthetic session to try the replay with |
 
-**`play` options:**
+**`play` options** (`--mounting worn` is refused without `--o3-cleared`; see [phase2d-guide.md](phase2d-guide.md)):
 - the usual live options: `--freq`, `--mounting`, `--capture-neutral-at S`, `--notes`;
 - `--audio winmm|null` and `--midi-device`;
 - `--no-record`, `--no-keep-awake`, `--close-after S`.

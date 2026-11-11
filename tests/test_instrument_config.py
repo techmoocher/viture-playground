@@ -73,3 +73,12 @@ def test_synth_and_replay_cli_roundtrip(tmp_path, capsys):
     assert meta["instrument"]["regions"][0]["chord"] == "C"
     assert main(["replay", str(s), "--reprocess", "--instrument", "--out", str(tmp_path / "r")]) == 0
     assert "interaction_events.jsonl identical to the original: True" in capsys.readouterr().out
+
+
+def test_small_yaw_profile_is_valid_and_smaller():
+    from headmusic.config import REPO_ROOT
+    cfg = load_config(REPO_ROOT / "config" / "profiles" / "small_yaw.toml")
+    ic = InstrumentConfig.from_config(cfg)
+    assert [r.chord for r in ic.regions] == ["C", "G", "Am", "F"]
+    assert max(max(abs(r.yaw_min_deg), abs(r.yaw_max_deg)) for r in ic.regions) == 24.0
+    assert ic.dwell_ms == 500.0  # only the geometry changes

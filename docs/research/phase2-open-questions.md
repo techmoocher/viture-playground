@@ -27,6 +27,13 @@
 | Q13 | "Raw commit time" for analysis | Logged: arrival time, estimated production time, processing time, MIDI send time | Which one is the protocol's raw commit time? Default field: estimated production time of the committing sample |
 | Q14 | Timing precision target (O4) | Software-side latency is reported as *estimated*. Physical audio latency is not measured | What precision is needed, and how should acoustic onset be measured? |
 
+## Found while preparing 2D (2026-11-11)
+
+| # | Topic | Engineering default | Question |
+|---|---|---|---|
+| Q15 | Passing through inner regions | Four chords on one yaw axis: reaching C or F passes through G or Am. A turn slower than region width ÷ dwell (10° / 0.5 s = 20°/s by default) commits the inner chord ([phase2d-guide.md](../phase2d-guide.md) U1) | Accept, or change the layout (two axes?), the dwell, or add a speed condition? |
+| Q16 | Smaller demo layout | Optional `config/profiles/small_yaw.toml` (regions within ±24°, otherwise the same). Not a default, no comfort claim | Should a worn exploratory demo (after O3) use it, or values set by the team? |
+
 ## Carried over from Phase 1
 
 - **O1:** the research report is missing; Q1–Q14 should be re-checked against it.
