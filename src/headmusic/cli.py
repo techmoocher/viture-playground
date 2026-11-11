@@ -162,7 +162,7 @@ def _live(args, view: bool) -> int:
                                write_raw_imu=cfg["imu"]["mode"] == "raw", write_processed=cfg["imu"]["mode"] == "pose")
         print(f"recording to {out}")
     processor = OrientationProcessor(ProcessorConfig.from_config(cfg))
-    gate = TrackingGate(int(cfg["gate"]["t_stale_ms"] * 1_000_000))
+    gate = TrackingGate.from_config(cfg)
     pipe = Pipeline(cfg, processor, gate, writer, clock)
     source = VitureSdkSource(sdk, shim, cfg, pipe.put, clock, pid=args.pid)
     pipe.start()
@@ -256,7 +256,7 @@ def cmd_replay(args) -> int:
     src = ReplaySource(src_dir, speed=None if args.speed == "max" else float(args.speed))
     cfg = load_config(args.config) if args.config else (src.config_snapshot or load_config())
     processor = OrientationProcessor(ProcessorConfig.from_config(cfg))
-    gate = TrackingGate(int(cfg["gate"]["t_stale_ms"] * 1_000_000))
+    gate = TrackingGate.from_config(cfg)
     if args.reprocess:
         meta = copy.deepcopy(src.meta)
         meta["source"] = {"kind": "replay", "replay_of_session_id": src.meta.get("session_id"),
@@ -325,7 +325,7 @@ def cmd_synth(args) -> int:
     out = Path(args.out) if args.out else Path(args.data) / "sessions" / session_dir_name(meta)
     writer = SessionWriter(out, meta, cfg["io"]["flush_interval_s"])
     processor = OrientationProcessor(ProcessorConfig.from_config(cfg))
-    pipe = Pipeline(cfg, processor, TrackingGate(int(cfg["gate"]["t_stale_ms"] * 1e6)), writer, clock=None,
+    pipe = Pipeline(cfg, processor, TrackingGate.from_config(cfg), writer, clock=None,
                     fixed_stream_config=stream)
     writer.update_meta(processing=pipe.stream_info, imu={"frequency_selected_hz": 240})
     pipe.process_all(trace.items())

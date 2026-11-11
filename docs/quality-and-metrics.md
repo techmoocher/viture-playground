@@ -43,7 +43,13 @@ Why each comparison point was chosen:
 
 ## Staleness and the tracking gate (consumer side, host clock)
 
-- `stale(now) := now − host_rx(last valid sample) > t_stale_ms` (100 ms). Evaluated on query, never stored on samples. The pipeline logs `stale_begin`/`stale_end` events for diagnostics.
+- `stale(now) := now − produced(last valid sample) > t_stale_ms` (100 ms). This is the **data age**, measured from when the sample was produced, not when it arrived. `produced = device_ts + o_min`, where:
+  - `o = host_rx − device_ts` is the clock offset of each valid sample;
+  - `o_min` is its running minimum on the connection, allowed to rise by at most `offset_drift_ppm` (200 ppm, provisional; G0 measured 12–17 ppm skew) of the elapsed host time.
+  - So data age = arrival age + lateness (`o − o_min`). The baseline resets with each connection, because the device clock restarts on replug. Invalid samples never move it.
+  - **Why:** in G0 R9, after a 30 s PC sleep, a sample produced before the sleep arrived 29.9 s late. An arrival-time rule treated it as fresh; this rule reports it as 29.9 s old.
+  - **Assumption:** the host clock keeps counting during sleep, as QPC did in R9.
+  - Evaluated on query, never stored on samples. The pipeline logs `stale_begin`/`stale_end` events from the same age.
 - `usable_for_control(now) := connected ∧ a valid sample on this connection ∧ last sample valid ∧ ¬stale ∧ neutral accepted`. The reasons reported are `disconnected`, `no_valid_sample`, `last_sample_invalid`, `stale`, `no_neutral`.
 - Any future command-producing module must use `TrackingGate`. **Invalid or stale tracking must never trigger musical commands.** Phase 1 displays and logs the gate only.
 - A new connection invalidates the neutral, so a new capture is required (open item O5 in the proposal).

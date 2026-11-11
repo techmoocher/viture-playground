@@ -44,7 +44,8 @@ euler_singular_deg = 89.0      # |display pitch| above this sets euler_near_sing
 [flags.r_ref_hz.raw]
 
 [gate]
-t_stale_ms = 100               # stream is stale if no valid sample arrived for longer than this (host clock)
+t_stale_ms = 100               # stale if the last valid sample was produced longer ago than this (host clock)
+offset_drift_ppm = 200.0       # how fast the clock-offset baseline may rise (G0 measured 12-17 ppm skew); provisional
 
 [metrics]
 w_ref_s = 5.0                  # stationary reference window (first W_ref seconds)
