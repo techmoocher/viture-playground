@@ -59,7 +59,7 @@ roll  φ = atan2( 2(w·x + y·z), 1 − 2(x² + y²) )     ∈ (−180°, 180°]
 
 | Field | Meaning |
 |---|---|
-| `device_ts_raw` | SDK timestamp, stored verbatim (`uint64`). Observed: about 10⁹ units per host second (ns) and every value a multiple of 10⁶ (1 ms resolution). Epoch consistent with time since power-on. The sample instant it refers to is undocumented |
+| `device_ts_raw` | SDK timestamp, stored verbatim (`uint64`). Observed: about 10⁹ units per host second (ns) and every value a multiple of 10⁶ (1 ms resolution). **The epoch is time since the glasses powered on, and it resets when the cable is replugged** (G0 R7, 2026-11-11: about 13 228 s before, 3.34 s after; the glasses power-cycle over USB). Device timestamps are therefore comparable only within one `connection_id`. The sample instant it refers to is undocumented |
 | `host_rx_monotonic_ns` | QueryPerformanceCounter scaled to ns, taken by the native capture shim as the first statement of the SDK callback. Same timebase as Python `time.perf_counter_ns()` (verified) |
 | Clock anchors | `session.json` stores (host monotonic, UTC) pairs at the start and end of each session |
 | Rule | Device clock for sample flags and intervals; host clock for staleness, the gate and the UI. The relation between them is estimated (clock fit), never assumed. Latency figures are relative, not absolute |
